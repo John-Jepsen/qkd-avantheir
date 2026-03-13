@@ -4,8 +4,6 @@
 
 This repository contains technical documentation and implementation guidance for integrating Quantum Key Distribution (QKD) into enterprise security infrastructure, replacing classical key exchange (Diffie-Hellman/ECDHE) with QKD-derived symmetric material.
 
-![QKD System Architecture](images/qkd-system-diagram.png)
-
 ## Scope
 
 | Integration Target | Mechanism | Standard Reference |
