@@ -48,8 +48,8 @@ QKD shifts the key problem from "agree by computation" to "deliver and track." A
 
 | Term | Definition |
 |------|------------|
-| **KME** | Key Management Entity - holds key material from QKD link, serves to applications |
-| **SAE** | Secure Application Entity - consumes keys for TLS/IPsec/applications |
+| **KME** | Key Management Entity — holds key material from QKD link, serves to applications |
+| **SAE** | Secure Application Entity — consumes keys for TLS/IPsec/applications |
 | **Key ID** | Identifier for key block; enables coordination between peers |
 | **Key size** | Requested key length in bits |
 
@@ -194,12 +194,6 @@ Accept: application/json
 - Two VPN gateways with dedicated link
 - High-security point-to-point communication
 
-**Characteristics:**
-- Simplest model
-- Each endpoint pulls "next key" as needed
-- No multi-hop coordination required
-- Key material inherently synchronized
-
 ### Trusted-Node Networks (Multi-Hop)
 
 ```
@@ -217,16 +211,11 @@ Accept: application/json
 
 **Security model:**
 - Security depends on physical security at each node
-- Access controls and monitoring at trusted nodes
 - Audit logging for all key operations
-- NOT "zero knowledge" - nodes process secrets during relay
+- NOT "zero knowledge" — nodes process secrets during relay
+- This is the model used by China's 12,000+ km backbone (QuantumCTek infrastructure)
 
-**Use cases:**
-- Long-distance key distribution
-- Network topologies without direct optical path
-- Backbone key distribution networks
-
-### Hybrid Classical-Quantum Model
+### Hybrid Classical-Quantum Model (RECOMMENDED)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -256,15 +245,27 @@ Accept: application/json
 
 **Key derivation with mixing:**
 ```
-Final_Key = KDF(QKD_Key || Classical_Key || Context)
+Final_Key = KDF(QKD_Key || PQC_Key || Classical_Key || Context)
 ```
 
 **Benefits:**
-- Defense in depth
+- Defense in depth (security holds if any single component is compromised)
 - Graceful degradation when QKD unavailable
-- Best of both security models
+- CNSA 2.0 compliance via PQC layer
+- Information-theoretic guarantees via QKD layer
 
-## 6. KME Client Implementation
+## 6. Vendor Key Management Platforms
+
+| Vendor | Platform | Key Management Capabilities |
+|--------|----------|----------------------------|
+| **ID Quantique / IonQ** | Cerberis XG | ETSI 014 compliant KME, integrated key lifecycle |
+| **Toshiba** | Multiplexed QKD System | KME integrated, supports 33.4 Tbps co-existence |
+| **QuantumCTek** | QKD Infrastructure Suite | Full KMS for China's backbone, carrier-grade key relay |
+| **QuintessenceLabs** | Trusted Security Foundation | Unified key management for QKD + classical keys |
+| **LuxQuanta** | NOVA LQ | KME for CV-QKD, standard telecom component integration |
+| **Q*Bird** | Falqon Series | MDI-QKD with multi-user key management |
+
+## 7. KME Client Implementation
 
 ```python
 """
@@ -316,14 +317,6 @@ class ETSIKMEClient:
                 count: int = 1) -> List[QKDKey]:
         """
         Request new key(s) for communication with target SAE
-
-        Args:
-            target_sae_id: ID of the peer SAE
-            key_size: Key size in bits (default 256)
-            count: Number of keys to request (default 1)
-
-        Returns:
-            List of QKDKey objects
         """
         url = urljoin(
             self.base_url,
@@ -354,13 +347,6 @@ class ETSIKMEClient:
                       key_ids: List[str]) -> List[QKDKey]:
         """
         Retrieve key(s) by ID (for receiving side)
-
-        Args:
-            source_sae_id: ID of the sending SAE
-            key_ids: List of key IDs to retrieve
-
-        Returns:
-            List of QKDKey objects
         """
         url = urljoin(
             self.base_url,
@@ -388,12 +374,6 @@ class ETSIKMEClient:
     def get_status(self, target_sae_id: str) -> KMEStatus:
         """
         Get key availability status for target SAE
-
-        Args:
-            target_sae_id: ID of the peer SAE
-
-        Returns:
-            KMEStatus object
         """
         url = urljoin(
             self.base_url,
@@ -418,19 +398,12 @@ class ETSIKMEClient:
                          min_keys: int = 10) -> bool:
         """
         Check if sufficient keys are available
-
-        Args:
-            target_sae_id: ID of the peer SAE
-            min_keys: Minimum acceptable key count
-
-        Returns:
-            True if sufficient keys available
         """
         status = self.get_status(target_sae_id)
         return status.stored_key_count >= min_keys
 ```
 
-## 7. Key Supply Monitoring
+## 8. Key Supply Monitoring
 
 ### Metrics to Track
 
@@ -446,8 +419,8 @@ class ETSIKMEClient:
 
 ```
 Required Key Buffer =
-    (Peak Consumption Rate × Max Outage Duration) +
-    (Normal Consumption Rate × Key Lifetime)
+    (Peak Consumption Rate x Max Outage Duration) +
+    (Normal Consumption Rate x Key Lifetime)
 
 Example:
 - Peak: 10 keys/second
@@ -455,8 +428,18 @@ Example:
 - Normal: 2 keys/second
 - Lifetime: 300 seconds
 
-Buffer = (10 × 60) + (2 × 300) = 600 + 600 = 1200 keys minimum
+Buffer = (10 x 60) + (2 x 300) = 600 + 600 = 1200 keys minimum
 ```
+
+## 9. ETSI Standards Suite
+
+| Standard | Title | Status |
+|----------|-------|--------|
+| GS QKD 004 | Application Interface | Published |
+| GS QKD 008 | Quality of Service | Published |
+| GS QKD 014 | REST Key Delivery API | Published (primary interface) |
+| GS QKD 015 | Security Proofs | Published |
+| GS QKD 016 | Security Evaluation Methodology | Published (adoption limited) |
 
 ## References
 
@@ -464,3 +447,4 @@ Buffer = (10 × 60) + (2 × 300) = 600 + 600 = 1200 keys minimum
 - [ETSI GS QKD 004 - Application Interface](https://www.etsi.org/deliver/etsi_gs/QKD/001_099/004/02.01.01_60/gs_QKD004v020101p.pdf)
 - [ITU-T Y.3800 - QKD Networks Overview](https://www.itu.int/rec/T-REC-Y.3800)
 - [ITU-T Y.3801 - Functional Requirements for QKDN](https://www.itu.int/rec/T-REC-Y.3801)
+- [ETSI QKD ISG Standards Suite](https://www.etsi.org/technologies/quantum-key-distribution)

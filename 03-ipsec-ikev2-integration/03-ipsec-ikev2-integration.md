@@ -109,6 +109,22 @@ SKEYSEED = prf(PPK, SKEYSEED_standard)
 
 This mixes the QKD-derived key into all subsequent IKE and Child SA keys.
 
+### Hybrid Key Derivation (QKD + PQC + Classical)
+
+For maximum protection, combine QKD PPK with CNSA 2.0 compliant algorithms:
+
+```
+1. Classical DH exchange → g^ir
+2. ML-KEM encapsulation → PQC_shared_secret (CNSA 2.0)
+3. QKD key retrieval → PPK (via KME)
+
+SKEYSEED_classical = prf(Ni | Nr, g^ir)
+SKEYSEED_pqc = prf(PQC_shared_secret, SKEYSEED_classical)
+SKEYSEED_final = prf(PPK, SKEYSEED_pqc)
+```
+
+This satisfies CNSA 2.0 mandates (ML-KEM) while adding physics-based QKD protection.
+
 ## 5. Notification Payloads
 
 ### PPK_IDENTITY (Notify Type 16435)
@@ -213,7 +229,25 @@ METHOD(ppk_provider_t, get_ppk, bool,
 }
 ```
 
-## 8. Rekey and Key Rotation
+## 8. Vendor-Specific IPsec/VPN Integration
+
+### Toshiba
+
+Toshiba's QKD platform integrates with standard IPsec gateways. The Quantum Corridor demonstration (December 2025) showed 800G encrypted transport over 21.8 km of live commercial fiber with zero packet loss over 48 continuous hours. KDDI-Toshiba multiplexed 33.4 Tbps with quantum keys over 80 km (March 2025).
+
+### ID Quantique / IonQ
+
+Cerberis XG provides QKD-derived keys to network encryptors via ETSI 014. Deployed in commercial and government networks globally. The platform supports both site-to-site VPN and point-to-point link encryption.
+
+### QuintessenceLabs
+
+Trusted Security Foundation platform manages both QKD-derived and classical keys, providing a unified key management interface for IPsec PPK provisioning. qOptica QKD system feeds into the key management platform.
+
+### fragmentiX
+
+Offers quantum-safe storage and key management solutions designed to integrate with EuroQCI infrastructure and IPsec gateways.
+
+## 9. Rekey and Key Rotation
 
 ### IKE SA Rekey
 
@@ -242,15 +276,29 @@ METHOD(ppk_provider_t, get_ppk, bool,
 
 Ensure QKD key generation rate exceeds consumption.
 
-## 9. Operational Considerations
+## 10. CNSA 2.0 Compliance Context
+
+NSA mandates CNSA 2.0 transition for National Security Systems:
+
+| Component | CNSA 2.0 Requirement | QKD Integration |
+|-----------|---------------------|-----------------|
+| Symmetric encryption | AES-256 | No change needed |
+| Key encapsulation | ML-KEM (CRYSTALS-Kyber) | QKD PPK augments ML-KEM |
+| Digital signatures | ML-DSA (CRYSTALS-Dilithium) | Orthogonal to QKD |
+| Transition deadline | 2030 (equipment), 2033 (exclusive) | QKD adds layer above mandate |
+
+A CNSA 2.0 compliant IKEv2 implementation using ML-KEM for key exchange, augmented with QKD-derived PPK, provides both regulatory compliance and physics-based security.
+
+## 11. Operational Considerations
 
 ### Failover Policy
 
 ```
 When QKD key unavailable:
 1. Buffer: Use cached keys if within validity window
-2. Degrade: Fall back to classical IKEv2 (lose QKD benefit)
-3. Fail-closed: Reject connection (security over availability)
+2. Degrade: Fall back to PQC-only IKEv2 (maintain CNSA 2.0 compliance)
+3. Classical: Fall back to classical IKEv2 (lose quantum resistance)
+4. Fail-closed: Reject connection (security over availability)
 
 Recommendation: Implement policy-based decision per connection criticality
 ```
@@ -264,22 +312,26 @@ Recommendation: Implement policy-based decision per connection criticality
 | Key retrieval latency | > 100ms | Investigate |
 | PPK mismatch errors | Any | Investigate sync |
 
-## 10. Security Analysis
+## 12. Security Analysis
 
 ### What PPK + QKD Provides
 
-- **Defense in depth**: Even if DH is broken, PPK protects
-- **Quantum resistance**: QKD key not vulnerable to Shor's
+- **Defense in depth**: Even if DH/ML-KEM is broken, PPK protects
+- **Quantum resistance**: QKD key not vulnerable to Shor's or future algorithms
 - **Forward secrecy**: Maintained via ephemeral DH + key rotation
+- **Eavesdropping detection**: QKD link monitors QBER for interception
 
 ### What It Does Not Provide
 
 - Protection against endpoint compromise
-- Protection if QKD system itself is compromised
+- Protection if QKD system itself is compromised (side-channel attacks)
 - Protection against classical channel MITM (still need authentication)
+- Digital signatures or identity verification (orthogonal to key exchange)
 
 ## References
 
 - [RFC 8784 - IKEv2 PPK](https://www.rfc-editor.org/rfc/rfc8784.html)
 - [IPsec + QKD Walkthrough (Rijsman)](https://www.brunorijsman.net/post/quantum-key-distribution-ipsec/)
 - [strongSwan PPK Documentation](https://wiki.strongswan.org/projects/strongswan/wiki/PPK)
+- [NSA CNSA 2.0](https://www.nsa.gov/Press-Room/News-Highlights/Article/Article/3148990/nsa-releases-future-quantum-resistant-qr-algorithm-requirements-for-national-se/)
+- [Toshiba Quantum Corridor](https://news.toshiba.com/press-releases/press-release-details/2025/Quantum-Corridor-Toshiba-Demonstrate-First-Cross-State-Quantum-Key-Distribution-Over-Live-Commercial-Metro-Fiber-Network/default.aspx)

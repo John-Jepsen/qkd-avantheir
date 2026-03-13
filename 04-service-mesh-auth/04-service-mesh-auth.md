@@ -54,6 +54,32 @@ For microservices and internal service meshes, QKD-derived keys fit symmetric au
 └─────────────────┘                           └─────────────────┘
 ```
 
+### Pattern C: SDN-Controlled QKD Key Allocation
+
+Software-defined networking enables dynamic reconfiguration of QKD key routing and allocation. The QKD network is managed as an SDN-controlled overlay, with a central controller allocating key resources based on application priority and security requirements.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     SDN Controller                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+│  │ Key Routing │  │  Priority   │  │  Failover   │             │
+│  │   Policy    │  │  Allocation │  │   Logic     │             │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘             │
+└─────────┼────────────────┼────────────────┼─────────────────────┘
+          │                │                │
+          ▼                ▼                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    QKD Network Layer                              │
+│  ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐                      │
+│  │KME 1│◄──►│KME 2│◄──►│KME 3│◄──►│KME 4│                      │
+│  └──┬──┘    └──┬──┘    └──┬──┘    └──┬──┘                      │
+└─────┼──────────┼──────────┼──────────┼──────────────────────────┘
+      ▼          ▼          ▼          ▼
+   Service A  Service B  Service C  Service D
+```
+
+This is the approach taken by the NATO DISCRETION project for military service-to-service security.
+
 ## 4. Key Distribution Models
 
 ### Pairwise Service Keys
@@ -115,7 +141,7 @@ service_keys:
 
 | Factor | Consideration |
 |--------|---------------|
-| QKD key supply | Rotation interval × active connections ≤ key generation rate |
+| QKD key supply | Rotation interval x active connections <= key generation rate |
 | Connection churn | New connections consume keys; plan for peak |
 | Epoch synchronization | All peers must rotate together |
 | Grace period | Support old + new key during transition |
@@ -461,3 +487,4 @@ clusters:
 
 - [ETSI GS QKD 014 - Key Delivery API](https://www.etsi.org/deliver/etsi_gs/QKD/001_099/014/01.01.01_60/gs_QKD014v010101p.pdf)
 - [ETSI GS QKD 004 - Application Interface](https://www.etsi.org/deliver/etsi_gs/QKD/001_099/004/02.01.01_60/gs_QKD004v020101p.pdf)
+- [NATO DISCRETION Project](https://www.sto.nato.int/document/discretion-quantum-secure-communications-for-european-defence/)

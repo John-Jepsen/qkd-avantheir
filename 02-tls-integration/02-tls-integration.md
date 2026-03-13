@@ -11,8 +11,9 @@ QKD-TLS integration bridges two channels:
 
 ### Integration Models
 
-1. **Out-of-band provisioning into PSK hooks** - Protocol consumes keys as pre-shared secrets
-2. **Out-of-band key replacement/augmentation** - Key update/rekey after initial handshake
+1. **Out-of-band provisioning into PSK hooks** — Protocol consumes keys as pre-shared secrets
+2. **Out-of-band key replacement/augmentation** — Key update/rekey after initial handshake
+3. **Hybrid QKD+PQC key exchange** — Combined key derivation mixing QKD, PQC, and classical keys
 
 ## 2. TLS 1.3 PSK Integration Flow
 
@@ -85,6 +86,32 @@ Cons:
 Recommendation: Default choice for QKD-TLS integration
 ```
 
+### PSK + ML-KEM + (EC)DHE Mode (HYBRID — STRONGEST)
+
+```
+TLS combines QKD-derived PSK with PQC key encapsulation and classical ECDHE
+
+Key derivation:
+  Final_Key = KDF(QKD_PSK || ML-KEM_shared_secret || ECDHE_shared_secret || Context)
+
+Pros:
+- Information-theoretic security from QKD
+- Computational quantum resistance from ML-KEM (FIPS 203)
+- Classical forward secrecy from ECDHE
+- Security holds if any single component is compromised
+
+Cons:
+- Highest complexity
+- Requires QKD availability + PQC library support
+
+Standards:
+- ETSI TS 104 015 (Feb 2025): Hybrid key exchanges with KEMAC
+- IETF RFC 9794 (June 2025): Terminology for hybrid schemes
+- IETF Draft: Hybrid key exchange in TLS 1.3
+
+Recommendation: Target architecture for highest-assurance deployments
+```
+
 ## 4. mTLS Considerations
 
 mTLS adds certificate-based mutual authentication but **does not change the key schedule**.
@@ -93,7 +120,7 @@ mTLS adds certificate-based mutual authentication but **does not change the key 
 |---------|--------------------------|
 | Client certificate | Provides identity assurance (orthogonal to key material) |
 | Server certificate | Same as standard TLS |
-| Key establishment | Still choose PSK-only or PSK+(EC)DHE |
+| Key establishment | Still choose PSK-only, PSK+(EC)DHE, or hybrid |
 
 ## 5. QKD Adapter Implementation Pattern
 
@@ -135,7 +162,21 @@ class QKDAdapter:
         pass
 ```
 
-## 6. Implementation Checklist
+## 6. Vendor-Specific TLS Integration
+
+### Toshiba
+
+Toshiba's QKD platform integrates with standard IPsec gateways and TLS stacks. Demonstrated 800G encrypted transport with zero packet loss over 48 continuous hours (Quantum Corridor, December 2025). The QKD system provides keys to the application via the KME using ETSI GS QKD 014.
+
+### ID Quantique / IonQ
+
+Cerberis XG platform provides QKD-derived keys to network encryptors and TLS stacks. ETSI 014 compliant. IonQ's $250M acquisition (February 2025) brings quantum computing resources to the networking platform.
+
+### QKD-KEM Protocol (2025)
+
+A proof-of-concept integrating QKD with PQC into TLS via OpenSSL's provider infrastructure achieved handshake times under 1 second with remote QKD nodes. Production deployment requires co-locating endpoints with QKD nodes to prevent key exposure during transport.
+
+## 7. Implementation Checklist
 
 ### TLS Stack Configuration
 
@@ -143,6 +184,7 @@ class QKDAdapter:
 - [ ] Configure PSK identity callback to use QKD adapter
 - [ ] Set PSK key exchange mode (psk_dhe_ke recommended)
 - [ ] Configure session ticket handling for QKD key epochs
+- [ ] Evaluate hybrid PSK + ML-KEM + ECDHE mode for highest assurance
 
 ### QKD Adapter Requirements
 
@@ -156,11 +198,11 @@ class QKDAdapter:
 ### Operational Requirements
 
 - [ ] Key supply monitoring (alert if generation < consumption)
-- [ ] Fallback policy (classical or PQC when QKD unavailable)
+- [ ] Fallback policy (PQC when QKD unavailable, classical as last resort)
 - [ ] Identity lifetime management
 - [ ] Connection churn alignment with key rotation
 
-## 7. Example: OpenSSL + QKD Integration
+## 8. Example: OpenSSL + QKD Integration
 
 Reference implementation: [brunorijsman/openssl-qkd](https://github.com/brunorijsman/openssl-qkd)
 
@@ -173,5 +215,7 @@ Key modifications:
 
 - [RFC 8446 - TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446.html)
 - [ITU-T Draft Y.QKD-TLS](https://www.itu.int/en/ITU-T/studygroups/2022-2024/13/Documents/QKD-TLS.pdf)
-- [Prévost et al. (2025) - ETSI-compliant QKD-TLS](https://arxiv.org/abs/2501.01234)
 - [OpenSSL + QKD Reference](https://github.com/brunorijsman/openssl-qkd)
+- [ETSI TS 104 015 - Hybrid Key Exchanges](https://www.etsi.org/newsroom/press-releases/2513-etsi-launches-new-standard-for-quantum-safe-hybrid-key-exchanges-to-secure-future-post-quantum-encryption)
+- [IETF RFC 9794 - Hybrid Terminology](https://datatracker.ietf.org/doc/rfc9794/)
+- [QKD-KEM Hybrid TLS](https://arxiv.org/pdf/2503.07196)
