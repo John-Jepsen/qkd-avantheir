@@ -4,24 +4,7 @@
 
 This repository contains technical documentation and implementation guidance for integrating Quantum Key Distribution (QKD) into enterprise security infrastructure, replacing classical key exchange (Diffie-Hellman/ECDHE) with QKD-derived symmetric material.
 
-```mermaid
-graph LR
-    subgraph Alice
-        A_src[Signal / Decoy / Vacuum States]
-    end
-    subgraph Bob
-        B_det[Single Photon Detectors]
-    end
-
-    A_src -->|Quantum Channel| Eve((Eve))
-    Eve -->|Quantum Channel| B_det
-    A_src -.->|Classical Channel| B_det
-
-    Alice -->|Shared Key K| BE_A[Bulk Encryptor]
-    Bob -->|Shared Key K| BE_B[Bulk Encryptor]
-
-    BE_A <-->|Ciphertext| BE_B
-```
+![QKD System Architecture](DOCS/images/qkd-image.jpeg)
 
 ## Scope
 
