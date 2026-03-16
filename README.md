@@ -43,19 +43,38 @@ This repository contains technical documentation and implementation guidance for
 ```
 qkd-avantheir/
 ├── README.md                          # This file
-├── 01-qkd-foundations.md              # QKD protocols, hardware, architectures, global deployments
-├── 02-tls-integration.md              # TLS 1.3/mTLS integration patterns (PSK + hybrid)
-├── 03-ipsec-ikev2-integration.md      # IPsec VPN integration via RFC 8784
-├── 04-service-mesh-auth.md            # Service-to-service symmetric rekeying
-├── 05-key-management.md               # ETSI API, key lifecycle, trusted nodes, hybrid models
-├── 06-vendor-analysis.md              # Vendor profiles (Toshiba, IDQ/IonQ, QuantumCTek, LuxQuanta, Q*Bird, QLabs, IBM, LM)
-├── 07-operational-constraints.md      # Distance, infrastructure, cost, failure modes, certification gaps
-├── 08-references.md                   # Full reference list with links
+├── 01-qkd-foundations/                # QKD protocols, hardware, architectures, global deployments
+├── 02-tls-integration/                # TLS 1.3/mTLS integration patterns (PSK + hybrid)
+├── 03-ipsec-ikev2-integration/        # IPsec VPN integration via RFC 8784
+├── 04-service-mesh-auth/              # Service-to-service symmetric rekeying
+├── 05-key-management/                 # ETSI API, key lifecycle, trusted nodes, hybrid models
+├── 06-vendor-analysis/                # Vendor profiles (Toshiba, IDQ/IonQ, QuantumCTek, LuxQuanta, Q*Bird, QLabs, IBM, LM)
+├── 07-operational-constraints/        # Distance, infrastructure, cost, failure modes, certification gaps
+├── 08-references/                     # Full reference list with links
 └── implementation/
-    ├── etsi-kme-client.py             # Sample ETSI KME client
-    ├── tls-psk-adapter.py             # TLS PSK integration adapter
-    └── ikev2-ppk-config.md            # IKEv2 PPK configuration guide
+    ├── README.md                      # Setup and quick-start guide
+    ├── bb84_simulator.py              # Full BB84 protocol simulation (sifting, QBER, error correction, privacy amplification)
+    ├── kme_server.py                  # ETSI GS QKD 014 REST API backed by BB84 simulator
+    ├── tls_psk_demo.py                # End-to-end PSK demo: Alice & Bob exchange a message using QKD-derived key
+    └── ikev2_ppk_config.md            # strongSwan IKEv2 PPK configuration guide (RFC 8784)
 ```
+
+## Running the Implementation
+
+```bash
+pip install flask requests cryptography
+
+# Terminal 1 — KME server
+python implementation/kme_server.py
+
+# Terminal 2 — Bob (responder)
+python implementation/tls_psk_demo.py server
+
+# Terminal 3 — Alice (initiator)
+python implementation/tls_psk_demo.py client
+```
+
+See [implementation/README.md](implementation/README.md) for full details.
 
 ## Key Contacts
 
