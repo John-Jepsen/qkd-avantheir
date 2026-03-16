@@ -43,7 +43,13 @@ A comprehensive study reference for all technical terms across the Avantheir QKD
 |------|-----------|
 | **Sifting** | Discard measurements where Alice and Bob chose different bases; keep only matching-basis results. |
 | **Error correction** | Estimate and correct bit errors in the sifted key. Reveals some information to a potential eavesdropper. |
+| **Binary reconciliation** | Error correction method comparing block parities over a classical channel to locate and flip mismatched bits. |
+| **Cascade** | Multi-pass binary reconciliation protocol. Performs several rounds of block-parity comparison at increasing block sizes. Near-zero residual error rate. Used in most commercial DV-QKD. |
+| **LDPC reconciliation** | Low-Density Parity-Check based error correction. More efficient than Cascade for high QBER channels. Used in CV-QKD. |
 | **Privacy amplification** | Final stage: hash the corrected key to remove any information Eve may have gained. Produces the final secure key. |
+| **Universal hash** | Hash function family where the collision probability is bounded regardless of input. BLAKE2b used as universal hash in BB84 privacy amplification. |
+| **Leftover Hash Lemma** | Theorem guaranteeing that HKDF/universal hashing bounds Eve's information to 2^(−security_param) bits even when she has partial knowledge of the input. |
+| **QBER sample fraction** | Fraction of sifted bits sacrificed publicly for error rate estimation (typically 10%). These bits are discarded and cannot appear in the final key. |
 
 ---
 
@@ -96,7 +102,13 @@ A comprehensive study reference for all technical terms across the Avantheir QKD
 |------|-----------|
 | **KME** | Key Management Entity. Holds QKD-distilled key material, serves keys to applications via ETSI 014 REST API. |
 | **SAE** | Secure Application Entity. Application that consumes keys from the KME. |
-| **Key ID** | Identifier for a key block enabling coordination between peers. |
+| **Master SAE** | The SAE that initiates key retrieval via `GET /enc_keys`. Receives key_ID + key_bytes. |
+| **Slave SAE** | The SAE that retrieves the matching key via `POST /dec_keys` using the key_ID sent by the master SAE. |
+| **Key ID** | Non-secret identifier for a key block, enabling the master SAE to tell the slave SAE which key to retrieve without transmitting key bytes. Maps to TLS 1.3 `psk_identity`. |
+| **Key pool** | Internal buffer of pre-generated BB84 keys held in the KME, ready for issuance. Replenished by background BB84 sessions. |
+| **Key pool target** | Configured minimum number of keys the KME maintains in its available pool (e.g., 50). |
+| **Dual-KME deployment** | Architecture where Alice and Bob each run their own KME instance. Keys are generated on one side and synchronized to the peer via a secure internal channel. Mirrors commercial deployments (Toshiba, IDQ Cerberis). |
+| **Peer sync** | Mechanism by which a master KME pushes key_ID + key_bytes to the peer KME after issuing keys. Allows the peer's slave SAE to later retrieve the key by key_ID without re-running BB84. |
 | **Key buffer** | Storage for distilled QKD key material prior to issuance. |
 | **Key lifecycle states** | CREATED → INDEXED → ISSUED → CONFIRMED → EXPIRED → ERASED |
 | **Key rotation** | Regular replacement of active keys. Typical interval: 5–300 seconds in service mesh. |
@@ -145,7 +157,12 @@ A comprehensive study reference for all technical terms across the Avantheir QKD
 | Term | Definition |
 |------|-----------|
 | **Point-to-point QKD link** | Direct quantum channel between two endpoints. Most common commercial deployment. |
-| **Trusted-node network** | Multi-hop architecture where intermediate nodes relay keys. Security depends on physical security at each node. |
+| **Trusted-node network** | Multi-hop architecture where intermediate nodes relay keys. Security depends on physical security at each node. Each relay node necessarily learns the session key in cleartext. |
+| **OTP relay pattern** | One-Time Pad relay: each hop XOR-encrypts the session key payload with the outgoing link key after XOR-decrypting it with the incoming link key. Used in Beijing-Shanghai backbone and EuroQCI. |
+| **Link key** | BB84-generated symmetric key shared between exactly two adjacent QKD nodes. Consumed once per relay operation (OTP semantics). |
+| **Session key** | Ephemeral 256-bit key generated fresh at the source for a single relay operation. Relayed to the destination via OTP relay; never travels in plaintext over any quantum link. |
+| **Relay integrity check** | Verification at the destination that the recovered session key matches the original (XOR cancellation check). |
+| **BFS routing** | Breadth-first search over the QKD network graph to find the shortest active path between source and destination. |
 | **Quantum repeaters** | Future technology enabling end-to-end entanglement without trusted nodes. Field-deployable estimated 2033–2040. |
 | **Satellite QKD** | Free-space optical QKD from orbiting platforms. Overcomes fiber distance limits. |
 | **Dark fiber** | Dedicated fiber not multiplexed with other traffic. Historically required for QKD; now DWDM co-existence is proven. |
@@ -164,6 +181,46 @@ A comprehensive study reference for all technical terms across the Avantheir QKD
 | Regional | 50–100 km | kbps–low Mbps | Careful engineering |
 | Long-haul | 100–300 km | bps–low kbps | Marginal feasibility |
 | Ultra-long | 300–1000+ km | Sub-bps (lab) | Requires TF-QKD or trusted nodes |
+
+---
+
+## Hybrid Key Derivation & KEM Primitives
+
+| Term | Definition |
+|------|-----------|
+| **KEM** | Key Encapsulation Mechanism. Asymmetric primitive where one party encapsulates a shared secret under a public key; the other decapsulates with their secret key to recover the same secret. |
+| **Encapsulate** | KEM operation: generates (ciphertext, shared_secret). The ciphertext is sent to the peer; the shared secret is kept locally. |
+| **Decapsulate** | KEM operation: recovers the shared secret from the ciphertext using the secret key. |
+| **ML-KEM (Kyber-768)** | NIST FIPS 203 key encapsulation mechanism. Kyber-768 wire sizes: 1184-byte public key, 1088-byte ciphertext, 32-byte shared secret. Security based on Module-LWE. |
+| **HKDF** | HMAC-based Key Derivation Function (RFC 5869). Two-step: Extract (compress entropy into PRK) + Expand (derive keying material). Used in TLS 1.3, hybrid QKD+PQC derivation, and IPsec. |
+| **IKM** | Input Key Material. The raw entropy fed into HKDF-Extract. In hybrid derivation: `IKM = qkd_key ‖ kem_shared_secret`. |
+| **PRK** | Pseudorandom Key. The intermediate 32-byte value output by HKDF-Extract. Used as input to HKDF-Expand. |
+| **Info / context** | Domain-separation string passed to HKDF-Expand (e.g., `"hybrid-key-derivation"`). Ensures keys derived for different purposes are independent. |
+| **Hybrid key derivation** | Combining QKD key material with a PQC KEM shared secret via HKDF: `IKM = qkd_key ‖ kem_secret; OKM = HKDF-SHA256(IKM)`. Combined key is secure if either QKD or ML-KEM is unbroken. Per ETSI TS 104 015 §6.3. |
+| **AEAD** | Authenticated Encryption with Associated Data. Provides both confidentiality and integrity. AES-256-GCM is the AEAD used in the PSK demo and TLS 1.3. |
+| **AES-256-GCM** | AES in Galois/Counter Mode with 256-bit key. Provides 128-bit security against Grover's algorithm. Standard AEAD for QKD-secured sessions. |
+| **GCM authentication tag** | 128-bit integrity verification appended to AES-GCM ciphertext. Decryption fails with `InvalidTag` if key, nonce, or ciphertext is modified. |
+| **Nonce** | Number used once. 12-byte random value prepended to AES-GCM ciphertext. Must never repeat under the same key. |
+| **BLAKE2b** | Cryptographic hash function. Used in BB84 privacy amplification as a universal hash (256-bit output). Faster than SHA-256 on 64-bit platforms. |
+
+---
+
+## Implementation Patterns
+
+| Term | Definition |
+|------|-----------|
+| **MockMLKEM** | Software stub for ML-KEM (Kyber-768) used in simulation. Embeds the shared secret in the first 32 bytes of the ciphertext so decapsulate can recover it without a real secret key. Not cryptographically secure — for testing only. |
+| **Key pool refill** | Background thread that restores the KME's available key count to the target when it drops below a trigger threshold. Avoids latency spikes on enc_keys requests. |
+| **BB84 key pool** | Set of pre-generated BB84 keys held in the KME ready for issuance. Each entry: (key_ID, key_bytes, size_bits). |
+| **Available pool** | Keys generated but not yet issued to any SAE. Moved to pending on enc_keys. |
+| **Pending pool** | Keys issued to the master SAE (enc_keys was called) but not yet retrieved by the slave SAE (dec_keys). Keys are removed from pending on successful dec_keys. |
+| **QBER threshold abort** | Protocol abort triggered when estimated QBER exceeds the security threshold (default 11% for BB84). Returns `BB84Result(secure=False, eavesdropper_detected=True)`. |
+| **Intercept-resend attack** | Eve measures each qubit in a random basis and re-prepares. Introduces ~25% QBER (detectable). Simulated by `BB84Protocol(eavesdrop=True)`. |
+| **ETSI 014 REST API** | `GET /enc_keys` → issues keys to master SAE. `POST /dec_keys` → retrieves key by key_ID for slave SAE. `GET /status` → pool and capability info. `POST /peer/sync_keys` → internal peer sync (dual-KME only). |
+| **Flask test client** | In-process HTTP client for testing Flask apps without a network socket. Used in the pytest suite to test KME endpoints without starting a live server. Not thread-safe when shared across threads. |
+| **Module-scoped fixture** | pytest fixture initialized once per test module rather than per test function. Used for the KME Flask client because BB84 pool initialization takes ~3 seconds. |
+| **MetricsCollector** | Thread-safe class that records BB84Result per session and computes aggregate QBER, key rate, eavesdrop count, and pool level for dashboard display. |
+| **QBER dashboard** | Text display showing average/peak QBER over the last 20 sessions, a bar chart scaled to the 11% abort threshold, total key bits generated, and uptime. |
 
 ---
 
@@ -242,3 +299,12 @@ A comprehensive study reference for all technical terms across the Avantheir QKD
 | TF | Twin-Field |
 | DV | Discrete-Variable |
 | CV | Continuous-Variable |
+| KEM | Key Encapsulation Mechanism |
+| HKDF | HMAC-based Key Derivation Function |
+| IKM | Input Key Material |
+| PRK | Pseudorandom Key |
+| AEAD | Authenticated Encryption with Associated Data |
+| GCM | Galois/Counter Mode |
+| OTP | One-Time Pad |
+| BFS | Breadth-First Search |
+| LDPC | Low-Density Parity-Check |
