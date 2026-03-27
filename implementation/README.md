@@ -38,14 +38,20 @@ is simulated in software.
 | `kme_server.py` | ETSI GS QKD 014 REST API backed by BB84 simulator |
 | `tls_psk_demo.py` | End-to-end PSK demo: Alice and Bob fetch the same key, encrypt a message |
 | `ikev2_ppk_config.md` | strongSwan IKEv2 configuration guide for RFC 8784 PPK |
+| `ml_eavesdrop_classifier.py` | Random Forest eavesdropper detection (replaces hard QBER threshold) |
+| `ml_parameter_tuner.py` | Gradient Boosted regression for adaptive protocol parameter optimization |
+| `ml_noise_predictor.py` | ARIMA time-series forecasting for channel noise prediction |
+| `ml_kme_anomaly.py` | Isolation Forest anomaly detection on KME key management traffic |
+| `ml_attack_classifier.py` | Multi-class Gradient Boosted classifier for 5 QKD attack types |
 
 ## Requirements
 
 ```bash
-pip install flask requests cryptography
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Python 3.10+ required.
+Python 3.10+ required. The ML modules require scikit-learn, numpy, and statsmodels.
 
 ## Quick start
 
@@ -96,6 +102,29 @@ message. No Diffie-Hellman occurs anywhere in this flow.
 
 See `ikev2_ppk_config.md` for step-by-step strongSwan configuration using
 keys dispensed by the KME server.
+
+### 5 — Run the ML modules
+
+Each ML module is self-contained with a demo when run directly:
+
+```bash
+source .venv/bin/activate
+
+# Eavesdropper detection (Random Forest, 93% accuracy)
+python ml_eavesdrop_classifier.py
+
+# Adaptive parameter tuning (Gradient Boosted Regression, R²=0.85)
+python ml_parameter_tuner.py
+
+# Channel noise prediction (ARIMA, MAE=0.006)
+python ml_noise_predictor.py
+
+# KME traffic anomaly detection (Isolation Forest, 86% detection rate)
+python ml_kme_anomaly.py
+
+# Multi-class attack recognition (Gradient Boosted Classifier, 96% accuracy)
+python ml_attack_classifier.py
+```
 
 ---
 
