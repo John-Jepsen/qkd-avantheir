@@ -39,6 +39,10 @@ class BB84Result:
     qber: float              # Estimated quantum bit error rate
     eavesdropper_detected: bool
     secure: bool
+    sift_ratio: float = 0.0          # sifted_bits / raw_bits
+    block_error_rates: list = None    # Per-block error rates for ML features  # noqa
+    error_variance: float = 0.0      # Variance of per-block error rates
+    max_burst_length: int = 0        # Longest consecutive error run
 
 
 class QuantumChannel:
@@ -57,8 +61,7 @@ class QuantumChannel:
         self.eavesdrop = eavesdrop
 
     def transmit(
-        self, alice_bits: list[int], alice_bases: list[int]
-    ) -> tuple[list[int], list[int]]:
+        self, alice_bits: list[int], alice_bases: list[int]) -> tuple[list[int], list[int]]:
         """
         Bob measures the qubits Alice sent. Returns (bob_bits, bob_bases).
 
@@ -171,6 +174,17 @@ class BB84Protocol:
         errors = sum(a != b for a, b in zip(sample_alice, sample_bob))
         qber = errors / sample_size
 
+        # ── ML feature extraction ────────────────────────────────────────────
+        sift_ratio = len(sifted_alice) / n_bits
+        block_error_rates = self._compute_block_error_rates(
+            sample_alice, sample_bob, block_size=8
+        )
+        error_variance = (
+            sum((r - qber) ** 2 for r in block_error_rates) / len(block_error_rates)
+            if block_error_rates else 0.0
+        )
+        max_burst = self._max_error_burst(sample_alice, sample_bob)
+
         # Remaining bits form the raw key
         key_alice = sifted_alice[sample_size:]
         key_bob = sifted_bob[sample_size:]
@@ -185,6 +199,10 @@ class BB84Protocol:
                 qber=qber,
                 eavesdropper_detected=eavesdropper_detected,
                 secure=False,
+                sift_ratio=sift_ratio,
+                block_error_rates=block_error_rates,
+                error_variance=error_variance,
+                max_burst_length=max_burst,
             )
 
         # ── Step 5: Error correction ───────────────────────────────────────────
@@ -207,7 +225,40 @@ class BB84Protocol:
             qber=qber,
             eavesdropper_detected=False,
             secure=True,
+            sift_ratio=sift_ratio,
+            block_error_rates=block_error_rates,
+            error_variance=error_variance,
+            max_burst_length=max_burst,
         )
+
+    # ── ML feature helpers ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compute_block_error_rates(
+        alice: list[int], bob: list[int], block_size: int = 8
+    ) -> list[float]:
+        """Per-block error rates for ML feature extraction."""
+        rates = []
+        for start in range(0, len(alice) - block_size + 1, block_size):
+            errs = sum(
+                a != b for a, b in zip(alice[start:start + block_size],
+                                       bob[start:start + block_size])
+            )
+            rates.append(errs / block_size)
+        return rates
+
+    @staticmethod
+    def _max_error_burst(alice: list[int], bob: list[int]) -> int:
+        """Length of the longest consecutive error run."""
+        max_run = 0
+        current = 0
+        for a, b in zip(alice, bob):
+            if a != b:
+                current += 1
+                max_run = max(max_run, current)
+            else:
+                current = 0
+        return max_run
 
     # ── Internal helpers ───────────────────────────────────────────────────────
 
