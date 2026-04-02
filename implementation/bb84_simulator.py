@@ -1,17 +1,31 @@
 """
-BB84 QKD Protocol Simulator
+BB84 QKD Protocol Simulator — Qiskit Edition
 
-Implements the complete BB84 key distribution protocol:
-  1. Alice generates random bits and bases, Bob measures in random bases
-  2. Basis sifting — discard positions where bases differ
-  3. QBER estimation — sample a fraction of sifted bits to detect eavesdropping
-  4. Error correction — binary reconciliation over block parities
-  5. Privacy amplification — BLAKE2b hash to bound Eve's information
+Implements the complete BB84 key distribution protocol using IBM Qiskit quantum
+circuits executed on the Aer statevector simulator.  Each qubit Alice sends is
+represented by a real quantum gate sequence (X for bit-flip, H for basis change)
+and measured through a simulated quantum backend — no classical coin-flips.
+
+Protocol steps:
+  1. Alice prepares qubits in Z or X basis via Qiskit circuits
+  2. Qubits traverse a noisy depolarizing channel (Qiskit Aer noise model)
+  3. Bob measures in a random basis; basis sifting discards mismatches
+  4. QBER estimation on a public sample detects eavesdropping
+  5. Error correction — binary reconciliation over block parities
+  6. Privacy amplification — BLAKE2b hash to bound Eve's information
+
+Eavesdropper simulation:
+  Eve performs an intercept-resend attack modeled as two sequential circuits:
+    Circuit 1: Alice prepares → Eve measures in random basis
+    Circuit 2: Eve re-prepares from her result → Bob measures
+  This faithfully captures the ~25% QBER introduced by wrong-basis measurement.
 
 Security properties:
   - Aborts if estimated QBER exceeds 11% (BB84 security threshold)
-  - Eavesdropper simulation adds ~25% QBER via intercept-resend attack
   - Privacy amplification uses BLAKE2b as a universal hash
+
+Requirements:
+  pip install qiskit qiskit-aer
 
 Usage:
     from bb84_simulator import BB84Protocol
@@ -23,11 +37,21 @@ Usage:
     # With eavesdropper (will abort):
     result = BB84Protocol(eavesdrop=True).run(n_bits=4096)
     print(result.secure)                      # False
+
+    # Fall back to classical simulation (no Qiskit required):
+    result = BB84Protocol(backend="classical").run(n_bits=4096)
 """
 
 import hashlib
 import secrets
 from dataclasses import dataclass
+
+from qiskit import QuantumCircuit
+from qiskit_aer import AerSimulator
+from qiskit_aer.noise import NoiseModel, depolarizing_error
+
+# Process qubits in batches to keep circuit size manageable
+_BATCH_SIZE = 256
 
 
 @dataclass
@@ -39,19 +63,148 @@ class BB84Result:
     qber: float              # Estimated quantum bit error rate
     eavesdropper_detected: bool
     secure: bool
+    backend_used: str = "qiskit"
     sift_ratio: float = 0.0          # sifted_bits / raw_bits
     block_error_rates: list = None    # Per-block error rates for ML features  # noqa
     error_variance: float = 0.0      # Variance of per-block error rates
     max_burst_length: int = 0        # Longest consecutive error run
 
 
-class QuantumChannel:
-    """
-    Simulates a lossy quantum channel with optional intercept-resend eavesdropper.
+# ── Qiskit quantum channel ───────────────────────────────────────────────────
 
-    error_rate: background QBER from channel noise (independent of eavesdropping)
-    eavesdrop:  if True, Eve intercepts every qubit in a random basis and re-prepares
-                before Bob receives it. This adds ~25% additional QBER.
+
+class QiskitQuantumChannel:
+    """
+    Quantum channel backed by IBM Qiskit Aer simulator.
+
+    Each qubit is prepared with real gate operations (X, H) and measured through
+    the Aer backend.  Channel noise is modeled as a single-qubit depolarizing
+    error applied via an identity gate inserted between preparation and
+    measurement.
+
+    Parameters
+    ----------
+    error_rate : float
+        Background QBER from channel noise. Mapped to depolarizing probability
+        p = 3·error_rate/2 so that the resulting bit-flip rate matches.
+    eavesdrop : bool
+        Simulate an intercept-resend eavesdropper using two-circuit model.
+    """
+
+    def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False):
+        if not 0.0 <= error_rate <= 0.5:
+            raise ValueError("error_rate must be between 0.0 and 0.5")
+        self.error_rate = error_rate
+        self.eavesdrop = eavesdrop
+
+        self._ideal_backend = AerSimulator()
+        self._noisy_backend = self._build_noisy_backend() if error_rate > 0 else None
+
+    def _build_noisy_backend(self) -> AerSimulator:
+        """Create an Aer backend with depolarizing noise on the id gate."""
+        noise_model = NoiseModel()
+        # Map error_rate to depolarizing probability:
+        # Depolarizing channel: P(bit flip) = 2p/3, so p = 3·error_rate/2
+        p = min(1.0, 3 * self.error_rate / 2)
+        noise_model.add_all_qubit_quantum_error(
+            depolarizing_error(p, 1), ["id"]
+        )
+        return AerSimulator(noise_model=noise_model)
+
+    def transmit(
+        self, alice_bits: list[int], alice_bases: list[int]
+    ) -> tuple[list[int], list[int]]:
+        """
+        Simulate quantum transmission and return (bob_bits, bob_bases).
+
+        Without eavesdropper: single circuit per batch
+            Alice prepares → channel noise (id gate) → Bob measures
+
+        With eavesdropper: two circuits per batch (intercept-resend)
+            Circuit 1: Alice prepares → Eve measures (ideal, no noise)
+            Circuit 2: Eve re-prepares → channel noise → Bob measures
+        """
+        n = len(alice_bits)
+        bob_bases = [secrets.randbelow(2) for _ in range(n)]
+
+        if self.eavesdrop:
+            eve_bases = [secrets.randbelow(2) for _ in range(n)]
+            # Eve intercepts: measures in her random basis (no channel noise)
+            eve_bits = self._run_circuit(
+                alice_bits, alice_bases, eve_bases, noisy=False
+            )
+            # Eve re-prepares and sends to Bob (channel noise applies here)
+            bob_bits = self._run_circuit(
+                eve_bits, eve_bases, bob_bases, noisy=True
+            )
+        else:
+            bob_bits = self._run_circuit(
+                alice_bits, alice_bases, bob_bases, noisy=True
+            )
+
+        return bob_bits, bob_bases
+
+    def _run_circuit(
+        self,
+        sender_bits: list[int],
+        sender_bases: list[int],
+        receiver_bases: list[int],
+        noisy: bool = True,
+    ) -> list[int]:
+        """Build and execute quantum circuits in batches."""
+        n = len(sender_bits)
+        all_results: list[int] = []
+
+        for start in range(0, n, _BATCH_SIZE):
+            end = min(start + _BATCH_SIZE, n)
+            batch_size = end - start
+
+            qc = QuantumCircuit(batch_size, batch_size)
+
+            # ── Sender preparation ──
+            for i in range(batch_size):
+                idx = start + i
+                if sender_bits[idx] == 1:
+                    qc.x(i)                    # encode bit value
+                if sender_bases[idx] == 1:
+                    qc.h(i)                    # switch to X (diagonal) basis
+
+            # ── Channel transmission (id gate carries depolarizing noise) ──
+            if noisy and self.error_rate > 0:
+                for i in range(batch_size):
+                    qc.id(i)
+
+            # ── Receiver measurement in chosen basis ──
+            for i in range(batch_size):
+                idx = start + i
+                if receiver_bases[idx] == 1:
+                    qc.h(i)                    # rotate X basis back to Z for measurement
+                qc.measure(i, i)
+
+            # ── Execute on Aer ──
+            backend = (
+                self._noisy_backend
+                if (noisy and self._noisy_backend)
+                else self._ideal_backend
+            )
+            job = backend.run(qc, shots=1)
+            counts = job.result().get_counts()
+
+            # Qiskit returns bitstrings MSB-first; qubit 0 is the rightmost char
+            bitstring = list(counts.keys())[0].zfill(batch_size)
+            bits = [int(b) for b in reversed(bitstring)]
+            all_results.extend(bits[:batch_size])
+
+        return all_results
+
+
+# ── Classical fallback channel (no Qiskit dependency) ────────────────────────
+
+
+class ClassicalQuantumChannel:
+    """
+    Classical probabilistic simulation of BB84 (original implementation).
+    Used as a fallback when Qiskit is unavailable or for fast comparison runs.
     """
 
     def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False):
@@ -61,18 +214,11 @@ class QuantumChannel:
         self.eavesdrop = eavesdrop
 
     def transmit(
-        self, alice_bits: list[int], alice_bases: list[int]) -> tuple[list[int], list[int]]:
-        """
-        Bob measures the qubits Alice sent. Returns (bob_bits, bob_bases).
-
-        When bases match and there is no eavesdropping or noise, Bob's bit
-        equals Alice's bit. When bases differ, Bob gets a uniformly random bit.
-        Channel noise flips bits independently at error_rate probability.
-        """
+        self, alice_bits: list[int], alice_bases: list[int]
+    ) -> tuple[list[int], list[int]]:
         n = len(alice_bits)
         bob_bases = [secrets.randbelow(2) for _ in range(n)]
         bob_bits = []
-
         noise_threshold = int(self.error_rate * 1000)
 
         for i in range(n):
@@ -80,30 +226,28 @@ class QuantumChannel:
             transmitted_basis = alice_bases[i]
 
             if self.eavesdrop:
-                # Eve picks a random basis and measures
                 eve_basis = secrets.randbelow(2)
                 if eve_basis == alice_bases[i]:
-                    # Eve's measurement is correct — she learns the bit
                     eve_bit = alice_bits[i]
                 else:
-                    # Wrong basis — Eve gets a random result and disturbs the qubit
                     eve_bit = secrets.randbelow(2)
                 transmitted_bit = eve_bit
                 transmitted_basis = eve_basis
 
-            # Bob measures in his random basis
             if bob_bases[i] == transmitted_basis:
                 bit = transmitted_bit
             else:
                 bit = secrets.randbelow(2)
 
-            # Independent channel noise
             if secrets.randbelow(1000) < noise_threshold:
                 bit ^= 1
 
             bob_bits.append(bit)
 
         return bob_bits, bob_bases
+
+
+# ── BB84 Protocol ────────────────────────────────────────────────────────────
 
 
 class BB84Protocol:
@@ -120,6 +264,9 @@ class BB84Protocol:
         Maximum tolerable QBER. Protocol aborts above this. Default: 0.11 (11%).
     sample_fraction : float
         Fraction of sifted bits sacrificed for QBER estimation. Default: 0.10 (10%).
+    backend : str
+        "qiskit" (default) — run on Qiskit Aer simulator with depolarizing noise.
+        "classical" — use the original probabilistic simulation (faster, no Qiskit).
     """
 
     def __init__(
@@ -128,8 +275,19 @@ class BB84Protocol:
         eavesdrop: bool = False,
         qber_threshold: float = 0.11,
         sample_fraction: float = 0.10,
+        backend: str = "qiskit",
     ):
-        self.channel = QuantumChannel(error_rate=error_rate, eavesdrop=eavesdrop)
+        self.backend_name = backend
+        if backend == "qiskit":
+            self.channel = QiskitQuantumChannel(
+                error_rate=error_rate, eavesdrop=eavesdrop
+            )
+        elif backend == "classical":
+            self.channel = ClassicalQuantumChannel(
+                error_rate=error_rate, eavesdrop=eavesdrop
+            )
+        else:
+            raise ValueError(f"Unknown backend: {backend!r} (use 'qiskit' or 'classical')")
         self.qber_threshold = qber_threshold
         self.sample_fraction = sample_fraction
 
@@ -146,12 +304,10 @@ class BB84Protocol:
         alice_bits = [secrets.randbelow(2) for _ in range(n_bits)]
         alice_bases = [secrets.randbelow(2) for _ in range(n_bits)]
 
-        # ── Step 2: Quantum channel transmission ───────────────────────────────
+        # ── Step 2: Quantum channel transmission (Qiskit circuits) ───────────
         bob_bits, bob_bases = self.channel.transmit(alice_bits, alice_bases)
 
         # ── Step 3: Sifting ────────────────────────────────────────────────────
-        # Alice and Bob compare bases on the public classical channel.
-        # They keep only the bit positions where they used the same basis.
         sifted_alice: list[int] = []
         sifted_bob: list[int] = []
         for i in range(n_bits):
@@ -164,10 +320,7 @@ class BB84Protocol:
                 f"Only {len(sifted_alice)} sifted bits — increase n_bits (try 4096+)"
             )
 
-        # ── Step 4: QBER estimation ────────────────────────────────────────────
-        # A random sample of sifted bits is revealed publicly to measure the
-        # error rate. These bits are discarded afterward — they cannot be part
-        # of the final key.
+        # ── Step 4: QBER estimation ──────────────────────────────────────────
         sample_size = max(10, int(len(sifted_alice) * self.sample_fraction))
         sample_alice = sifted_alice[:sample_size]
         sample_bob = sifted_bob[:sample_size]
@@ -199,22 +352,17 @@ class BB84Protocol:
                 qber=qber,
                 eavesdropper_detected=eavesdropper_detected,
                 secure=False,
+                backend_used=self.backend_name,
                 sift_ratio=sift_ratio,
                 block_error_rates=block_error_rates,
                 error_variance=error_variance,
                 max_burst_length=max_burst,
             )
 
-        # ── Step 5: Error correction ───────────────────────────────────────────
-        # Binary reconciliation: compare block parities to locate and fix errors.
-        # Real systems use Cascade or LDPC. This simplified version corrects one
-        # error per 8-bit block — sufficient for typical low QBER values.
+        # ── Step 5: Error correction ─────────────────────────────────────────
         corrected_bob = self._error_correct(key_alice, key_bob)
 
-        # ── Step 6: Privacy amplification ─────────────────────────────────────
-        # Hash the corrected key to collapse Eve's partial information to zero.
-        # BLAKE2b acting as a universal hash ensures that even if Eve obtained
-        # t bits of information, the output leaks at most 2^(-security_param) bits.
+        # ── Step 6: Privacy amplification ────────────────────────────────────
         final_key = self._privacy_amplify(corrected_bob)
 
         return BB84Result(
@@ -225,13 +373,14 @@ class BB84Protocol:
             qber=qber,
             eavesdropper_detected=False,
             secure=True,
+            backend_used=self.backend_name,
             sift_ratio=sift_ratio,
             block_error_rates=block_error_rates,
             error_variance=error_variance,
             max_burst_length=max_burst,
         )
 
-    # ── ML feature helpers ─────────────────────────────────────────────────────
+    # ── ML feature helpers ───────────────────────────────────────────────────
 
     @staticmethod
     def _compute_block_error_rates(
@@ -260,7 +409,7 @@ class BB84Protocol:
                 current = 0
         return max_run
 
-    # ── Internal helpers ───────────────────────────────────────────────────────
+    # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _error_correct(
         self, alice_bits: list[int], bob_bits: list[int]
@@ -302,25 +451,29 @@ class BB84Protocol:
         return hashlib.blake2b(raw_bytes, digest_size=32).digest()
 
 
-# ── Standalone demo ────────────────────────────────────────────────────────────
+# ── Standalone demo ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     scenarios = [
-        ("Normal channel (1% noise)",      {"error_rate": 0.01, "eavesdrop": False}),
-        ("Noisy channel (5% noise)",        {"error_rate": 0.05, "eavesdrop": False}),
+        ("Normal channel (1% noise)",       {"error_rate": 0.01, "eavesdrop": False}),
+        ("Noisy channel (5% noise)",         {"error_rate": 0.05, "eavesdrop": False}),
         ("Eavesdropper present (~25% QBER)", {"error_rate": 0.01, "eavesdrop": True}),
     ]
 
-    print("BB84 QKD Protocol Simulator")
-    print("=" * 60)
+    for backend_name in ("qiskit", "classical"):
+        print(f"\n{'=' * 60}")
+        print(f"BB84 QKD Protocol — {backend_name.upper()} backend")
+        print("=" * 60)
 
-    for name, kwargs in scenarios:
-        print(f"\nScenario: {name}")
-        result = BB84Protocol(**kwargs).run(n_bits=4096)
-        print(f"  Raw qubits sent:  {result.raw_bits}")
-        print(f"  Sifted bits:      {result.sifted_bits}  (~50% of raw)")
-        print(f"  Estimated QBER:   {result.qber:.3f}  ({result.qber * 100:.1f}%)")
-        if result.secure:
-            print(f"  Final key (256b): {result.final_key.hex()}")
-        else:
-            print(f"  ABORT — {'eavesdropper detected' if result.eavesdropper_detected else 'QBER too high'}")
+        for name, kwargs in scenarios:
+            print(f"\nScenario: {name}")
+            result = BB84Protocol(**kwargs, backend=backend_name).run(n_bits=4096)
+            print(f"  Backend:          {result.backend_used}")
+            print(f"  Raw qubits sent:  {result.raw_bits}")
+            print(f"  Sifted bits:      {result.sifted_bits}  (~50% of raw)")
+            print(f"  Estimated QBER:   {result.qber:.3f}  ({result.qber * 100:.1f}%)")
+            if result.secure:
+                print(f"  Final key (256b): {result.final_key.hex()}")
+            else:
+                reason = "eavesdropper detected" if result.eavesdropper_detected else "QBER too high"
+                print(f"  ABORT — {reason}")

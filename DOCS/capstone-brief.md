@@ -29,7 +29,7 @@ A runnable Python stack that emulates the full QKD key delivery pipeline:
 
 | Component | File | What it does |
 |-----------|------|--------------|
-| BB84 simulator | `bb84_simulator.py` | Simulates the complete BB84 protocol — qubit exchange, basis sifting, QBER estimation, error correction, privacy amplification — and outputs a 256-bit shared secret |
+| BB84 simulator | `bb84_simulator.py` | Runs the complete BB84 protocol on IBM Qiskit quantum circuits (Aer simulator) — qubit preparation via X/H gates, depolarizing noise channel, basis sifting, QBER estimation, error correction, privacy amplification — and outputs a 256-bit shared secret. Supports dual-backend (`qiskit` default, `classical` fallback). |
 | ETSI KME server | `kme_server.py` | REST API implementing ETSI GS QKD 014, backed by the BB84 simulator, dispensing keys to applications via standard endpoints |
 | PSK demo | `tls_psk_demo.py` | Alice and Bob each fetch the same key from the KME and use it for AES-256-GCM authenticated encryption — demonstrating the PSK pattern that replaces Diffie-Hellman |
 | IKEv2 PPK guide | `ikev2_ppk_config.md` | Step-by-step configuration guide for feeding KME-derived keys into strongSwan as RFC 8784 Post-quantum Preshared Keys |

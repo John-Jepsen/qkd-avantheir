@@ -24,7 +24,7 @@ qkd-avantheir/
 │   ├── vocab-study-guide.md    # QKD terminology reference (245 entries)
 │   └── images/qkd-image.jpeg   # Architecture diagram
 ├── implementation/
-│   ├── bb84_simulator.py       # BB84 protocol sim: sifting, QBER, Cascade, privacy amplification
+│   ├── bb84_simulator.py       # BB84 on IBM Qiskit Aer: quantum circuits, depolarizing noise, dual-backend
 │   ├── kme_server.py           # Flask ETSI GS QKD 014 REST API with thread-safe key pool
 │   ├── tls_psk_demo.py         # End-to-end TLS PSK demo: Alice/Bob AES-256-GCM via KME
 │   ├── ikev2_ppk_config.md     # strongSwan RFC 8784 PPK config guide
@@ -42,7 +42,7 @@ Each numbered directory (01–06) also contains a `phase*.md` supporting researc
 - **Vendor coverage**: Toshiba, ID Quantique/IonQ, QuantumCTek, LuxQuanta, Q*Bird, QuintessenceLabs (Tier 1-2 QKD vendors) plus IBM (PQC/research) and Lockheed Martin (defense integration)
 - **Standards**: RFC 8446 (TLS 1.3), RFC 8784 (IKEv2 mixed-PSK), ETSI GS QKD 004/014/015/016, ETSI TS 104 015 (hybrid), IETF RFC 9794 (hybrid terminology), NIST FIPS 203/204/205 (PQC)
 - **Strategic framing**: QKD vs PQC is not either/or — the docs map where each is appropriate. Hybrid QKD+PQC is the recommended architecture for highest-assurance deployments.
-- **Implementation stack**: Python 3.10+, Flask, `cryptography` library, `requests`. QBER abort threshold: >11%.
+- **Implementation stack**: Python 3.10+, IBM Qiskit 2.x / Qiskit Aer 0.17.x (quantum circuit simulator), Flask, `cryptography` library, `requests`. QBER abort threshold: >11%.
 
 ## Writing Conventions
 

@@ -186,14 +186,17 @@ Tie all components together: cross-reference documentation against implementatio
 
 ### Milestone 4 — Working Implementation
 
-**BB84 Simulator (`bb84_simulator.py`)**
-- [x] Simulate qubit exchange over ideal and noisy channels
+**BB84 Simulator (`bb84_simulator.py`) — IBM Qiskit Backend**
+- [x] Simulate qubit exchange using Qiskit quantum circuits (X/H gates) on Aer simulator
+- [x] Model channel noise via Qiskit Aer depolarizing error on identity gates
+- [x] Model intercept-resend eavesdropper as two sequential quantum circuits
 - [x] Implement basis sifting and raw key generation
 - [x] Implement QBER estimation with configurable noise threshold
 - [x] Implement error correction (Cascade-style reconciliation)
 - [x] Implement privacy amplification (hash-based key compression)
 - [x] Demonstrate eavesdropper detection: abort when QBER exceeds threshold
 - [x] Output deterministic 256-bit symmetric key
+- [x] Dual-backend support: `qiskit` (default) and `classical` fallback
 
 **KME Server (`kme_server.py`)**
 - [x] Implement ETSI GS QKD 014 REST endpoints: `/enc_keys`, `/dec_keys`, `/status`
@@ -242,6 +245,8 @@ Tie all components together: cross-reference documentation against implementatio
 
 | Library | Version | Usage |
 |---------|---------|-------|
+| Qiskit | 2.x | IBM quantum circuit construction and transpilation (`bb84_simulator.py`) |
+| Qiskit Aer | 0.17.x | Quantum circuit simulation with depolarizing noise model |
 | Flask | 3.x | ETSI GS QKD 014 REST API server (`kme_server.py`) |
 | requests | 2.x | HTTP client for KME key fetch in PSK demo |
 | cryptography | 42.x | AES-256-GCM encryption, HKDF key derivation |
@@ -266,6 +271,7 @@ Tie all components together: cross-reference documentation against implementatio
 
 | Tool | Usage |
 |------|-------|
+| IBM Qiskit / Aer | Quantum circuit simulator backend for BB84 protocol |
 | strongSwan | IKEv2/IPsec VPN software referenced in PPK configuration guide |
 | Git / GitHub | Version control |
 | VS Code | Primary editor |

@@ -35,7 +35,7 @@ This repository contains technical documentation and implementation guidance for
 
 ### Research & Integration Anchors
 
-- **IBM** — Foundational BB84 research heritage, PQC leadership (CRYSTALS-Kyber/Dilithium)
+- **IBM** — Foundational BB84 research heritage, PQC leadership (CRYSTALS-Kyber/Dilithium), Qiskit quantum simulation framework
 - **Lockheed Martin** — Defense systems integration, QuintessenceLabs partnership
 
 ## Document Structure
@@ -43,6 +43,7 @@ This repository contains technical documentation and implementation guidance for
 ```
 qkd-avantheir/
 ├── README.md                          # This file
+├── quiz.html                          # Interactive vocab flash cards & quiz (open in browser)
 ├── 01-qkd-foundations/                # QKD protocols, hardware, architectures, global deployments
 ├── 02-tls-integration/                # TLS 1.3/mTLS integration patterns (PSK + hybrid)
 ├── 03-ipsec-ikev2-integration/        # IPsec VPN integration via RFC 8784
@@ -53,7 +54,7 @@ qkd-avantheir/
 ├── 08-references/                     # Full reference list with links
 └── implementation/
     ├── README.md                      # Setup and quick-start guide
-    ├── bb84_simulator.py              # Full BB84 protocol simulation (sifting, QBER, error correction, privacy amplification)
+    ├── bb84_simulator.py              # BB84 protocol on IBM Qiskit Aer (quantum circuits, depolarizing noise, dual-backend)
     ├── kme_server.py                  # ETSI GS QKD 014 REST API backed by BB84 simulator
     ├── tls_psk_demo.py                # End-to-end PSK demo: Alice & Bob exchange a message using QKD-derived key
     └── ikev2_ppk_config.md            # strongSwan IKEv2 PPK configuration guide (RFC 8784)
@@ -62,7 +63,7 @@ qkd-avantheir/
 ## Running the Implementation
 
 ```bash
-pip install flask requests cryptography
+pip install flask requests cryptography qiskit qiskit-aer
 
 # Terminal 1 — KME server
 python implementation/kme_server.py
@@ -75,6 +76,22 @@ python implementation/tls_psk_demo.py client
 ```
 
 See [implementation/README.md](implementation/README.md) for full details.
+
+## Vocabulary Flash Cards
+
+An interactive study tool is included at [`quiz.html`](quiz.html). Open it directly in any browser — no server or build step required.
+
+```bash
+open quiz.html        # macOS
+xdg-open quiz.html    # Linux
+```
+
+Features:
+- **Flash Cards** — flip to reveal definitions, mark cards as known/unknown
+- **Quiz Mode** — multiple-choice questions drawn from the vocab set
+- Tracks progress across the session so you can focus on terms you haven't mastered yet
+
+The content is sourced from [DOCS/vocab-study-guide.md](DOCS/vocab-study-guide.md).
 
 ## Key Contacts
 
