@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QKD Vocabulary Quiz</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .container { max-width: 720px; margin: 0 auto; padding: 20px; }
+
+  header { text-align: center; padding: 24px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  header h1 { font-size: 1.4rem; color: var(--accent); margin-bottom: 4px; }
+  header p { color: var(--muted); font-size: 0.8rem; }
+
+  /* Nav tabs */
+  .tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .tab { flex: 1; padding: 10px; text-align: center; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 0.85rem; transition: all 0.15s; }
+  .tab:hover { border-color: var(--accent); color: var(--text); }
+  .tab.active { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
+
+  /* Panels */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Category filter */
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .filter-btn { padding: 4px 10px; font-size: 0.7rem; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); cursor: pointer; transition: all 0.15s; }
+  .filter-btn:hover { border-color: var(--accent); }
+  .filter-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* Card */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 32px 24px; min-height: 200px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; cursor: pointer;
+    transition: border-color 0.2s; position: relative; }
+  .card:hover { border-color: var(--accent); }
+  .card .label { position: absolute; top: 12px; left: 16px; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .card .term { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+  .card .definition { font-size: 0.9rem; line-height: 1.5; color: var(--text); max-width: 560px; }
+  .card .category-tag { position: absolute; top: 12px; right: 16px; font-size: 0.6rem; color: var(--yellow); }
+  .card .hint { position: absolute; bottom: 12px; font-size: 0.65rem; color: var(--muted); }
+
+  .card-nav { display: flex; gap: 12px; margin-top: 16px; align-items: center; }
+  .card-nav button { padding: 8px 20px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.85rem; }
+  .card-nav button:hover { border-color: var(--accent); }
+  .card-counter { color: var(--muted); font-size: 0.8rem; }
+
+  /* Quiz */
+  .quiz-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .score { color: var(--accent); font-size: 0.9rem; }
+  .streak { color: var(--yellow); font-size: 0.8rem; }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 20px; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+  .question { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin-bottom: 16px; }
+  .question .q-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .question .q-text { font-size: 1rem; line-height: 1.5; }
+  .question .q-category { font-size: 0.65rem; color: var(--yellow); margin-top: 8px; }
+
+  .choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .choice { padding: 14px 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; cursor: pointer; font-size: 0.85rem; line-height: 1.4; transition: all 0.15s; }
+  .choice:hover:not(.disabled) { border-color: var(--accent); }
+  .choice.correct { border-color: var(--green); background: #4ade8018; }
+  .choice.wrong { border-color: var(--red); background: #f8717118; }
+  .choice.disabled { cursor: default; opacity: 0.7; }
+  .choice.disabled.highlight { opacity: 1; }
+
+  .quiz-controls { display: flex; gap: 12px; }
+  .btn { padding: 10px 24px; border-radius: 6px; border: none; font-size: 0.85rem; cursor: pointer; font-weight: 600; }
+  .btn-primary { background: var(--accent); color: var(--bg); }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); }
+
+  /* Quiz mode selector */
+  .mode-select { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-btn { padding: 6px 14px; font-size: 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); cursor: pointer; }
+  .mode-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-card .stat-value { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+  .stat-card .stat-label { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+
+  .missed-list { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .missed-list h3 { font-size: 0.85rem; color: var(--red); margin-bottom: 12px; }
+  .missed-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+  .missed-item:last-child { border: none; }
+  .missed-item .mi-term { color: var(--accent); font-weight: 600; }
+  .missed-item .mi-def { color: var(--muted); margin-top: 2px; }
+
+  /* Keyboard hints */
+  .kb-hint { text-align: center; color: var(--muted); font-size: 0.65rem; margin-top: 12px; }
+  kbd { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 0.65rem; }
+
+  /* Search */
+  .search-box { width: 100%; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.85rem; margin-bottom: 16px; outline: none; font-family: inherit; }
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--muted); }
+
+  .term-list { max-height: 60vh; overflow-y: auto; }
+  .term-entry { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .term-entry .te-term { color: var(--accent); font-weight: 600; font-size: 0.85rem; }
+  .term-entry .te-cat { color: var(--yellow); font-size: 0.6rem; margin-left: 8px; }
+  .term-entry .te-def { color: var(--muted); font-size: 0.8rem; margin-top: 2px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>QKD Vocab Quiz</h1>
+    <p>245 terms from the Avantheir QKD project</p>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="flashcards">Flashcards</div>
+    <div class="tab" data-tab="quiz">Quiz</div>
+    <div class="tab" data-tab="browse">Browse</div>
+    <div class="tab" data-tab="stats">Stats</div>
+  </div>
+
+  <!-- FLASHCARDS -->
+  <div class="panel active" id="flashcards">
+    <div class="filters" id="flash-filters"></div>
+    <div class="card" id="flashcard" onclick="flipCard()">
+      <span class="label" id="card-label">TERM</span>
+      <span class="category-tag" id="card-cat"></span>
+      <span class="term" id="card-front"></span>
+      <span class="definition" id="card-back" style="display:none"></span>
+      <span class="hint" id="card-hint">click or press space to flip</span>
+    </div>
+    <div class="card-nav">
+      <button onclick="prevCard()">← Prev</button>
+      <span class="card-counter" id="card-counter">1 / 245</span>
+      <button onclick="nextCard()">Next →</button>
+      <button onclick="shuffleCards()" style="margin-left:auto">Shuffle</button>
+    </div>
+    <div class="kb-hint"><kbd>←</kbd> prev &nbsp; <kbd>→</kbd> / <kbd>space</kbd> flip &nbsp; <kbd>→</kbd> next</div>
+  </div>
+
+  <!-- QUIZ -->
+  <div class="panel" id="quiz">
+    <div class="filters" id="quiz-filters"></div>
+    <div class="mode-select">
+      <div class="mode-btn active" data-mode="term-to-def">Term → Definition</div>
+      <div class="mode-btn" data-mode="def-to-term">Definition → Term</div>
+    </div>
+    <div class="quiz-header">
+      <span class="score" id="quiz-score">0 / 0</span>
+      <span class="streak" id="quiz-streak"></span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="quiz-progress" style="width:0%"></div></div>
+    <div class="question">
+      <div class="q-label" id="q-label">Question 1</div>
+      <div class="q-text" id="q-text"></div>
+      <div class="q-category" id="q-cat"></div>
+    </div>
+    <div class="choices" id="choices"></div>
+    <div class="quiz-controls">
+      <button class="btn btn-primary" id="next-btn" onclick="nextQuestion()" style="display:none">Next →</button>
+      <button class="btn btn-secondary" onclick="resetQuiz()">Restart</button>
+    </div>
+    <div class="kb-hint"><kbd>1</kbd>-<kbd>4</kbd> choose &nbsp; <kbd>Enter</kbd> / <kbd>→</kbd> next</div>
+  </div>
+
+  <!-- BROWSE -->
+  <div class="panel" id="browse">
+    <input type="text" class="search-box" id="search-input" placeholder="Search terms or definitions...">
+    <div class="filters" id="browse-filters"></div>
+    <div class="term-list" id="term-list"></div>
+  </div>
+
+  <!-- STATS -->
+  <div class="panel" id="stats">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-value" id="s-total">0</div><div class="stat-label">Questions Answered</div></div>
+      <div class="stat-card"><div class="stat-value" id="s-correct">0</div><div class="stat-label">Correct</div></div>
+      <div class="stat-card"><div class="stat-value" id="s-pct">0%</div><div class="stat-label">Accuracy</div></div>
+      <div class="stat-card"><div class="stat-value" id="s-streak">0</div><div class="stat-label">Best Streak</div></div>
+    </div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-secondary" onclick="resetStats()">Reset All Stats</button>
+    </div>
+    <div class="missed-list" id="missed-list">
+      <h3>Most Missed Terms</h3>
+      <div id="missed-items"><p style="color:var(--muted);font-size:0.8rem">No missed terms yet. Start quizzing!</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── VOCAB DATA ──
+const VOCAB = [
+  // QKD Protocols & Variants
+  {t:"BB84",d:"Bennett-Brassard 1984. Baseline discrete-variable QKD protocol using conjugate polarization bases (rectilinear + diagonal). Foundation of modern QKD.",c:"Protocols"},
+  {t:"E91",d:"Ekert 1991. Entanglement-based QKD using Bell inequality violations to detect eavesdropping.",c:"Protocols"},
+  {t:"DV-QKD",d:"Discrete-Variable QKD. Encodes keys in discrete quantum properties (polarization, phase, time-bin); uses single-photon detectors.",c:"Protocols"},
+  {t:"CV-QKD",d:"Continuous-Variable QKD. Encodes keys in amplitude and phase quadratures of coherent light; uses homodyne/heterodyne receivers instead of single-photon detectors.",c:"Protocols"},
+  {t:"MDI-QKD",d:"Measurement-Device-Independent QKD. Both parties send states to an untrusted central relay performing Bell-state measurement; eliminates all detector-side attacks.",c:"Protocols"},
+  {t:"TF-QKD",d:"Twin-Field QKD. Phase-encoded weak coherent pulses sent to an untrusted node with single-photon interference. Key rates scale as √transmittance, overcoming the PLOB bound.",c:"Protocols"},
+  {t:"Decoy-state BB84",d:"Enhanced BB84 using decoy-state protocols (varying pulse intensities) to detect photon-number splitting attacks. Now standard in all commercial DV-QKD.",c:"Protocols"},
+  {t:"Device-independent QKD",d:"Theoretical protocol providing security without trusting the measurement apparatus at all.",c:"Protocols"},
+
+  // Physics & Math Foundations
+  {t:"No-cloning theorem",d:"Quantum principle: unknown quantum states cannot be perfectly copied. Fundamental basis of QKD security.",c:"Physics"},
+  {t:"Heisenberg uncertainty principle",d:"Measuring one quantum observable disturbs the conjugate observable. Underlies CV-QKD security.",c:"Physics"},
+  {t:"Bell inequality violations",d:"Statistical test proving entanglement between particles. Used in E91 for eavesdropping detection.",c:"Physics"},
+  {t:"Information-theoretic security",d:"Security guaranteed by laws of physics, not by computational difficulty. QKD's key advantage over PQC.",c:"Physics"},
+  {t:"Computational hardness",d:"Security based on conjectured difficulty of math problems (e.g., factoring, discrete log). Basis of classical and PQC crypto.",c:"Physics"},
+  {t:"QBER",d:"Quantum Bit Error Rate. Fraction of sifted key bits with errors; indicates potential eavesdropping. Threshold: <11% for BB84; practical systems target low single digits.",c:"Physics"},
+  {t:"PLOB bound",d:"Pirandola-Laurenza-Ottaviani-Banchi bound. Theoretical limit on key rates in direct fiber without quantum repeaters. TF-QKD overcomes it via square-root scaling.",c:"Physics"},
+  {t:"Shor's algorithm",d:"Quantum algorithm that breaks RSA and elliptic curve crypto in polynomial time. Primary motivation for quantum-safe cryptography.",c:"Physics"},
+  {t:"Grover's algorithm",d:"Quantum algorithm giving quadratic speedup on unstructured search. Effectively halves symmetric key strength (AES-256 → 128-bit security).",c:"Physics"},
+  {t:"LWE",d:"Learning with Errors. Lattice-based hardness problem underlying ML-KEM (CRYSTALS-Kyber) security.",c:"Physics"},
+  {t:"Photon transmission probability",d:"Exponential decay with fiber distance (~0.2 dB/km telecom fiber). Every ~15 km roughly halves transmission.",c:"Physics"},
+
+  // Key Processing Stages
+  {t:"Sifting",d:"Discard measurements where Alice and Bob chose different bases; keep only matching-basis results.",c:"Key Processing"},
+  {t:"Error correction",d:"Estimate and correct bit errors in the sifted key. Reveals some information to a potential eavesdropper.",c:"Key Processing"},
+  {t:"Binary reconciliation",d:"Error correction method comparing block parities over a classical channel to locate and flip mismatched bits.",c:"Key Processing"},
+  {t:"Cascade",d:"Multi-pass binary reconciliation protocol. Performs several rounds of block-parity comparison at increasing block sizes. Near-zero residual error rate. Used in most commercial DV-QKD.",c:"Key Processing"},
+  {t:"LDPC reconciliation",d:"Low-Density Parity-Check based error correction. More efficient than Cascade for high QBER channels. Used in CV-QKD.",c:"Key Processing"},
+  {t:"Privacy amplification",d:"Final stage: hash the corrected key to remove any information Eve may have gained. Produces the final secure key.",c:"Key Processing"},
+  {t:"Universal hash",d:"Hash function family where the collision probability is bounded regardless of input. BLAKE2b used as universal hash in BB84 privacy amplification.",c:"Key Processing"},
+  {t:"Leftover Hash Lemma",d:"Theorem guaranteeing that HKDF/universal hashing bounds Eve's information to 2^(−security_param) bits even when she has partial knowledge of the input.",c:"Key Processing"},
+  {t:"QBER sample fraction",d:"Fraction of sifted bits sacrificed publicly for error rate estimation (typically 10%). These bits are discarded and cannot appear in the final key.",c:"Key Processing"},
+
+  // Standards & RFCs
+  {t:"RFC 8446",d:"TLS 1.3 specification. Defines PSK modes used for QKD integration.",c:"Standards"},
+  {t:"RFC 8784",d:"IKEv2 Post-quantum Preshared Key (PPK). Mixes additional preshared key material into IKEv2 derivation.",c:"Standards"},
+  {t:"RFC 9794",d:"Hybrid cryptography terminology (June 2025).",c:"Standards"},
+  {t:"RFC 7296",d:"Base IKEv2 specification.",c:"Standards"},
+  {t:"RFC 4301",d:"IPsec architecture.",c:"Standards"},
+  {t:"FIPS 203",d:"ML-KEM (CRYSTALS-Kyber). NIST post-quantum key encapsulation mechanism.",c:"Standards"},
+  {t:"FIPS 204",d:"ML-DSA (CRYSTALS-Dilithium). NIST post-quantum digital signature standard.",c:"Standards"},
+  {t:"FIPS 205",d:"SLH-DSA (SPHINCS+). NIST post-quantum hash-based signature standard.",c:"Standards"},
+  {t:"CNSA 2.0",d:"NSA's Commercial National Security Algorithm Suite. Mandates ML-KEM, ML-DSA, AES-256 for post-quantum transition (2030 equipment, 2033 exclusive).",c:"Standards"},
+  {t:"ETSI GS QKD 004",d:"QKD application interface standard.",c:"Standards"},
+  {t:"ETSI GS QKD 008",d:"QKD quality of service standard.",c:"Standards"},
+  {t:"ETSI GS QKD 014",d:"REST key delivery API. Primary interface for KME-to-SAE communication.",c:"Standards"},
+  {t:"ETSI GS QKD 015",d:"QKD security proofs standard.",c:"Standards"},
+  {t:"ETSI GS QKD 016",d:"QKD security evaluation methodology (limited adoption).",c:"Standards"},
+  {t:"ETSI TS 104 015",d:"Hybrid key exchanges with KEMAC (Feb 2025).",c:"Standards"},
+  {t:"ITU-T Y.3800 / Y.3801",d:"QKD network overview and functional requirements.",c:"Standards"},
+
+  // Network & Security Protocols
+  {t:"TLS 1.3",d:"Transport Layer Security 1.3. Current standard for securing web/application traffic.",c:"Network"},
+  {t:"IPsec",d:"Internet Protocol Security. Layer 3 encryption for VPNs and site-to-site links.",c:"Network"},
+  {t:"IKEv2",d:"Internet Key Exchange v2. Establishes Security Associations for IPsec tunnels.",c:"Network"},
+  {t:"mTLS",d:"Mutual TLS. Both client and server authenticate with certificates.",c:"Network"},
+  {t:"PSK",d:"Pre-Shared Key. Symmetric key agreed before the TLS handshake. QKD delivers PSK material to TLS stacks.",c:"Network"},
+  {t:"PSK-only mode",d:"TLS using only PSK for key derivation. No forward secrecy.",c:"Network"},
+  {t:"PSK + (EC)DHE",d:"TLS mixing PSK with ephemeral Diffie-Hellman. Recommended for QKD — preserves forward secrecy.",c:"Network"},
+  {t:"PSK + ML-KEM + (EC)DHE",d:"Hybrid mode combining QKD-PSK, post-quantum KEM, and classical ECDHE. Strongest option.",c:"Network"},
+  {t:"ECDHE",d:"Elliptic Curve Diffie-Hellman Ephemeral. Classical key agreement providing forward secrecy.",c:"Network"},
+  {t:"PPK",d:"Post-quantum Preshared Key (RFC 8784). Mechanism for mixing QKD key material into IKEv2.",c:"Network"},
+  {t:"SDN",d:"Software-Defined Networking. Enables dynamic QKD key allocation and routing via centralized control plane.",c:"Network"},
+  {t:"DWDM",d:"Dense Wavelength Division Multiplexing. Many wavelengths on one fiber. Toshiba demonstrated 33.4 Tbps co-existence with QKD.",c:"Network"},
+  {t:"CWDM",d:"Coarse Wavelength Division Multiplexing. LuxQuanta CV-QKD co-exists over 120 km.",c:"Network"},
+
+  // Key Management
+  {t:"KME",d:"Key Management Entity. Holds QKD-distilled key material, serves keys to applications via ETSI 014 REST API.",c:"Key Mgmt"},
+  {t:"SAE",d:"Secure Application Entity. Application that consumes keys from the KME.",c:"Key Mgmt"},
+  {t:"Master SAE",d:"The SAE that initiates key retrieval via GET /enc_keys. Receives key_ID + key_bytes.",c:"Key Mgmt"},
+  {t:"Slave SAE",d:"The SAE that retrieves the matching key via POST /dec_keys using the key_ID sent by the master SAE.",c:"Key Mgmt"},
+  {t:"Key ID",d:"Non-secret identifier for a key block, enabling the master SAE to tell the slave SAE which key to retrieve without transmitting key bytes. Maps to TLS 1.3 psk_identity.",c:"Key Mgmt"},
+  {t:"Key pool",d:"Internal buffer of pre-generated BB84 keys held in the KME, ready for issuance. Replenished by background BB84 sessions.",c:"Key Mgmt"},
+  {t:"Key pool target",d:"Configured minimum number of keys the KME maintains in its available pool (e.g., 50).",c:"Key Mgmt"},
+  {t:"Dual-KME deployment",d:"Architecture where Alice and Bob each run their own KME instance. Keys are generated on one side and synchronized to the peer via a secure internal channel.",c:"Key Mgmt"},
+  {t:"Peer sync",d:"Mechanism by which a master KME pushes key_ID + key_bytes to the peer KME after issuing keys.",c:"Key Mgmt"},
+  {t:"Key buffer",d:"Storage for distilled QKD key material prior to issuance.",c:"Key Mgmt"},
+  {t:"Key lifecycle states",d:"CREATED → INDEXED → ISSUED → CONFIRMED → EXPIRED → ERASED",c:"Key Mgmt"},
+  {t:"Key rotation",d:"Regular replacement of active keys. Typical interval: 5–300 seconds in service mesh.",c:"Key Mgmt"},
+  {t:"Key epoch",d:"Logical grouping of keys by rotation cycle (epoch 1, 2, 3…).",c:"Key Mgmt"},
+  {t:"Grace period",d:"Transition window where both old and new keys are valid during rotation.",c:"Key Mgmt"},
+  {t:"Key mixing",d:"Combining QKD + PQC + classical keys: Final_Key = KDF(QKD ‖ PQC ‖ Classical ‖ Context)",c:"Key Mgmt"},
+  {t:"KEMAC",d:"Key Encapsulation Mechanism with Authentication Code. ETSI TS 104 015 hybrid exchange method.",c:"Key Mgmt"},
+  {t:"One-time use keys",d:"Keys retrievable only once from KME (highest security model).",c:"Key Mgmt"},
+  {t:"Zeroization",d:"Secure erasure of key material after use.",c:"Key Mgmt"},
+
+  // Hardware
+  {t:"SPAD",d:"Single-Photon Avalanche Diode. InGaAs/InP detector; 10–25% efficiency; no cryogenics needed. Widely used in commercial QKD.",c:"Hardware"},
+  {t:"SNSPD",d:"Superconducting Nanowire Single-Photon Detector. >90% efficiency, ultra-low dark counts, <15 ps jitter. Requires cryogenic cooling (~2.5 K).",c:"Hardware"},
+  {t:"Weak coherent pulses",d:"Attenuated laser pulses with Poisson photon statistics. Practical QKD systems use these instead of true single-photon sources.",c:"Hardware"},
+  {t:"SPDC",d:"Spontaneous Parametric Down-Conversion. Generates entangled photon pairs for E91-type protocols.",c:"Hardware"},
+  {t:"Homodyne detection",d:"Coherent detection using local oscillator interference. Used in CV-QKD.",c:"Hardware"},
+  {t:"Heterodyne detection",d:"Alternative coherent detection measuring both quadratures simultaneously. Used in CV-QKD.",c:"Hardware"},
+  {t:"Local Oscillator (LO)",d:"Reference light beam for coherent detection in CV-QKD systems.",c:"Hardware"},
+  {t:"QRNG",d:"Quantum Random Number Generator. Hardware source for quantum-certified randomness.",c:"Hardware"},
+  {t:"Photonic integrated circuits",d:"On-chip optical components for cost reduction in QKD systems.",c:"Hardware"},
+
+  // Attacks
+  {t:"HNDL",d:"Harvest Now, Decrypt Later. Adversary collects encrypted data today to decrypt with future quantum computers. Acknowledged as active threat by DHS, NCSC, ENISA.",c:"Attacks"},
+  {t:"CRQC",d:"Cryptographically Relevant Quantum Computer. Hypothetical future quantum computer capable of breaking classical public-key crypto (~2035 central estimate).",c:"Attacks"},
+  {t:"PNS attack",d:"Photon-Number Splitting. Exploits multi-photon emissions in weak coherent pulses. Mitigated by decoy-state protocols.",c:"Attacks"},
+  {t:"Detector blinding",d:"Bright light forces single-photon detectors into classical mode, completely breaking DV-QKD security.",c:"Attacks"},
+  {t:"Trojan horse attack",d:"Injects light to probe internal QKD system states.",c:"Attacks"},
+  {t:"Side-channel attacks",d:"Exploit implementation gaps between theoretical proofs and real systems. Most frequently cited QKD criticism.",c:"Attacks"},
+  {t:"LO attacks",d:"Exploits the local oscillator in CV-QKD. Mitigated by locally-generated LO designs.",c:"Attacks"},
+  {t:"Endpoint compromise",d:"Breach at the application level — QKD cannot prevent this.",c:"Attacks"},
+
+  // Architecture & Deployment
+  {t:"Point-to-point QKD link",d:"Direct quantum channel between two endpoints. Most common commercial deployment.",c:"Architecture"},
+  {t:"Trusted-node network",d:"Multi-hop architecture where intermediate nodes relay keys. Security depends on physical security at each node.",c:"Architecture"},
+  {t:"OTP relay pattern",d:"One-Time Pad relay: each hop XOR-encrypts the session key payload with the outgoing link key after XOR-decrypting with the incoming link key.",c:"Architecture"},
+  {t:"Link key",d:"BB84-generated symmetric key shared between exactly two adjacent QKD nodes. Consumed once per relay operation (OTP semantics).",c:"Architecture"},
+  {t:"Session key",d:"Ephemeral 256-bit key generated fresh at the source for a single relay operation. Never travels in plaintext over any quantum link.",c:"Architecture"},
+  {t:"Relay integrity check",d:"Verification at the destination that the recovered session key matches the original (XOR cancellation check).",c:"Architecture"},
+  {t:"BFS routing",d:"Breadth-first search over the QKD network graph to find the shortest active path between source and destination.",c:"Architecture"},
+  {t:"Quantum repeaters",d:"Future technology enabling end-to-end entanglement without trusted nodes. Field-deployable estimated 2033–2040.",c:"Architecture"},
+  {t:"Satellite QKD",d:"Free-space optical QKD from orbiting platforms. Overcomes fiber distance limits.",c:"Architecture"},
+  {t:"Dark fiber",d:"Dedicated fiber not multiplexed with other traffic. Historically required for QKD; now DWDM co-existence is proven.",c:"Architecture"},
+  {t:"Service mesh",d:"Microservice infrastructure layer (e.g., Envoy proxy) for inter-service security.",c:"Architecture"},
+  {t:"Pairwise service keys",d:"Unique keys between each service pair (A↔B, A↔C, B↔C).",c:"Architecture"},
+  {t:"Group service keys",d:"Shared epoch keys across a trust group. Simpler but higher breach impact.",c:"Architecture"},
+  {t:"Forward secrecy",d:"Compromising long-term keys doesn't compromise past sessions. Maintained via (EC)DHE in QKD-TLS hybrid mode.",c:"Architecture"},
+  {t:"Defense in depth",d:"Multiple independent protective layers. Core argument for hybrid QKD+PQC.",c:"Architecture"},
+  {t:"Fail-closed",d:"Reject connections when QKD is unavailable (security over availability).",c:"Architecture"},
+
+  // Hybrid Key Derivation
+  {t:"KEM",d:"Key Encapsulation Mechanism. Asymmetric primitive where one party encapsulates a shared secret under a public key; the other decapsulates with their secret key.",c:"Crypto"},
+  {t:"Encapsulate",d:"KEM operation: generates (ciphertext, shared_secret). The ciphertext is sent to the peer; the shared secret is kept locally.",c:"Crypto"},
+  {t:"Decapsulate",d:"KEM operation: recovers the shared secret from the ciphertext using the secret key.",c:"Crypto"},
+  {t:"ML-KEM (Kyber-768)",d:"NIST FIPS 203 key encapsulation mechanism. 1184-byte public key, 1088-byte ciphertext, 32-byte shared secret. Security based on Module-LWE.",c:"Crypto"},
+  {t:"HKDF",d:"HMAC-based Key Derivation Function (RFC 5869). Two-step: Extract (compress entropy into PRK) + Expand (derive keying material). Used in TLS 1.3, hybrid QKD+PQC.",c:"Crypto"},
+  {t:"IKM",d:"Input Key Material. The raw entropy fed into HKDF-Extract. In hybrid derivation: IKM = qkd_key ‖ kem_shared_secret.",c:"Crypto"},
+  {t:"PRK",d:"Pseudorandom Key. The intermediate 32-byte value output by HKDF-Extract. Used as input to HKDF-Expand.",c:"Crypto"},
+  {t:"Info / context",d:"Domain-separation string passed to HKDF-Expand. Ensures keys derived for different purposes are independent.",c:"Crypto"},
+  {t:"Hybrid key derivation",d:"Combining QKD key material with a PQC KEM shared secret via HKDF. Combined key is secure if either QKD or ML-KEM is unbroken. Per ETSI TS 104 015.",c:"Crypto"},
+  {t:"AEAD",d:"Authenticated Encryption with Associated Data. Provides both confidentiality and integrity. AES-256-GCM is the standard AEAD for QKD sessions.",c:"Crypto"},
+  {t:"AES-256-GCM",d:"AES in Galois/Counter Mode with 256-bit key. Provides 128-bit security against Grover's algorithm. Standard AEAD for QKD-secured sessions.",c:"Crypto"},
+  {t:"GCM authentication tag",d:"128-bit integrity verification appended to AES-GCM ciphertext. Decryption fails with InvalidTag if key, nonce, or ciphertext is modified.",c:"Crypto"},
+  {t:"Nonce",d:"Number used once. 12-byte random value prepended to AES-GCM ciphertext. Must never repeat under the same key.",c:"Crypto"},
+  {t:"BLAKE2b",d:"Cryptographic hash function used in BB84 privacy amplification as a universal hash (256-bit output). Faster than SHA-256 on 64-bit platforms.",c:"Crypto"},
+
+  // Implementation Patterns
+  {t:"MockMLKEM",d:"Software stub for ML-KEM (Kyber-768) used in simulation. Embeds the shared secret in the first 32 bytes of the ciphertext. Not cryptographically secure — for testing only.",c:"Implementation"},
+  {t:"Key pool refill",d:"Background thread that restores the KME's available key count to the target when it drops below a trigger threshold.",c:"Implementation"},
+  {t:"BB84 key pool",d:"Set of pre-generated BB84 keys held in the KME ready for issuance. Each entry: (key_ID, key_bytes, size_bits).",c:"Implementation"},
+  {t:"Available pool",d:"Keys generated but not yet issued to any SAE. Moved to pending on enc_keys.",c:"Implementation"},
+  {t:"Pending pool",d:"Keys issued to the master SAE but not yet retrieved by the slave SAE. Removed on successful dec_keys.",c:"Implementation"},
+  {t:"QBER threshold abort",d:"Protocol abort triggered when estimated QBER exceeds the security threshold (default 11% for BB84).",c:"Implementation"},
+  {t:"Intercept-resend attack",d:"Eve measures each qubit in a random basis and re-prepares. Introduces ~25% QBER (detectable). Simulated by BB84Protocol(eavesdrop=True).",c:"Implementation"},
+  {t:"ETSI 014 REST API",d:"GET /enc_keys → issues keys. POST /dec_keys → retrieves by key_ID. GET /status → pool info. POST /peer/sync_keys → peer sync.",c:"Implementation"},
+  {t:"Flask test client",d:"In-process HTTP client for testing Flask apps without a network socket. Used in the pytest suite.",c:"Implementation"},
+  {t:"Module-scoped fixture",d:"pytest fixture initialized once per test module rather than per test function. Used because BB84 pool init takes ~3 seconds.",c:"Implementation"},
+  {t:"MetricsCollector",d:"Thread-safe class recording BB84Result per session, computing aggregate QBER, key rate, eavesdrop count, and pool level.",c:"Implementation"},
+  {t:"QBER dashboard",d:"Text display showing average/peak QBER, a bar chart scaled to the 11% abort threshold, total key bits, and uptime.",c:"Implementation"},
+
+  // Vendors
+  {t:"Toshiba",d:"Cambridge, UK. High-performance DV-QKD, DWDM co-existence (33.4 Tbps demonstrated).",c:"Vendors"},
+  {t:"ID Quantique (IDQ)",d:"Geneva, Switzerland. First commercial QKD vendor (2001). Acquired by IonQ Feb 2025 for $250M. Cerberis XG, Quantis QRNG.",c:"Vendors"},
+  {t:"IonQ",d:"US. Trapped-ion quantum computing; acquired IDQ for computing + networking convergence.",c:"Vendors"},
+  {t:"QuantumCTek",d:"Anhui, China. Primary vendor for China's national QKD network (CN-QCN). Largest deployed QKD infrastructure globally.",c:"Vendors"},
+  {t:"LuxQuanta",d:"Barcelona, Spain. CV-QKD specialist. NOVA LQ uses standard telecom components, no cryogenics.",c:"Vendors"},
+  {t:"Q*Bird",d:"Delft, Netherlands. MDI-QKD specialist (QuTech/TU Delft spin-off). Falqon Series product.",c:"Vendors"},
+  {t:"QuintessenceLabs",d:"Canberra, Australia. Integrated QKD + QRNG + key management platform. Lockheed Martin investor.",c:"Vendors"},
+  {t:"IBM",d:"US. Historical QKD (BB84 co-inventor, first experimental QKD 1992). Current focus: PQC (Kyber/Dilithium).",c:"Vendors"},
+  {t:"Lockheed Martin",d:"US. Defense integration, ruggedization, accreditation pathways. Strategic investor in QuintessenceLabs.",c:"Vendors"},
+
+  // Standards Bodies
+  {t:"NIST",d:"National Institute of Standards and Technology. PQC standards (FIPS 203-205), quantum information guidance.",c:"Vendors"},
+  {t:"NSA",d:"National Security Agency. CNSA 2.0 mandate; recommends PQC-first, does not endorse QKD.",c:"Vendors"},
+  {t:"ETSI",d:"European Telecommunications Standards Institute. Primary QKD standards body (QKD ISG).",c:"Vendors"},
+  {t:"ITU-T",d:"International Telecommunication Union - Telecommunication. QKD network standards (Y.3800 series).",c:"Vendors"},
+  {t:"NATO",d:"North Atlantic Treaty Organization. Quantum Technologies Strategy (Jan 2024); DISCRETION project.",c:"Vendors"},
+
+  // Deployments
+  {t:"CN-QCN",d:"China's national QKD network: 12,000+ km, 80 cities, 145 nodes. Operational.",c:"Deployments"},
+  {t:"BSBN",d:"Beijing–Shanghai backbone: 2,000+ km. Operational since 2016.",c:"Deployments"},
+  {t:"EuroQCI",d:"All 27 EU member states + ESA. Target operational 2030.",c:"Deployments"},
+  {t:"Eagle-1",d:"EU/ESA LEO QKD satellite. Launch 2026.",c:"Deployments"},
+  {t:"QEYSSat",d:"Canadian Space Agency QKD microsatellite. Launch late 2026.",c:"Deployments"},
+  {t:"Micius",d:"Chinese satellite QKD. Operational since 2016; 12,800 km link achieved 2025.",c:"Deployments"},
+  {t:"DISCRETION",d:"NATO military CV-QKD project. Active.",c:"Deployments"},
+  {t:"Romania network",d:"1,500 km, 36 links (IonQ/IDQ). 2025.",c:"Deployments"},
+
+  // Acronyms
+  {t:"QKD",d:"Quantum Key Distribution",c:"Acronyms"},
+  {t:"PQC",d:"Post-Quantum Cryptography",c:"Acronyms"},
+  {t:"TLS",d:"Transport Layer Security",c:"Acronyms"},
+  {t:"OTP",d:"One-Time Pad",c:"Acronyms"},
+  {t:"GCM",d:"Galois/Counter Mode",c:"Acronyms"},
+  {t:"ML-DSA",d:"Module-Lattice Digital Signature Algorithm",c:"Acronyms"},
+  {t:"CNSA",d:"Commercial National Security Algorithm Suite",c:"Acronyms"},
+  {t:"FIPS",d:"Federal Information Processing Standard",c:"Acronyms"},
+  {t:"MDI",d:"Measurement-Device-Independent",c:"Acronyms"},
+  {t:"TF",d:"Twin-Field",c:"Acronyms"},
+  {t:"DV",d:"Discrete-Variable",c:"Acronyms"},
+  {t:"CV",d:"Continuous-Variable",c:"Acronyms"},
+];
+
+const CATEGORIES = [...new Set(VOCAB.map(v => v.c))];
+
+// ── STATE ──
+let stats = JSON.parse(localStorage.getItem('qkd-quiz-stats') || '{"total":0,"correct":0,"bestStreak":0,"missed":{}}');
+let flashIdx = 0, flashFlipped = false, flashDeck = [...VOCAB];
+let quizMode = 'term-to-def', quizQ = 0, quizCorrect = 0, quizStreak = 0, quizTotal = 20;
+let quizDeck = [], quizAnswered = false;
+let activeFilters = { flashcards: new Set(), quiz: new Set(), browse: new Set() };
+
+function saveStats() { localStorage.setItem('qkd-quiz-stats', JSON.stringify(stats)); }
+
+// ── TABS ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'stats') renderStats();
+    if (tab.dataset.tab === 'browse') renderBrowse();
+  });
+});
+
+// ── FILTERS ──
+function renderFilters(containerId, panelKey) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '<div class="filter-btn active" data-cat="all">All</div>' +
+    CATEGORIES.map(c => `<div class="filter-btn" data-cat="${c}">${c}</div>`).join('');
+  el.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.cat;
+      if (cat === 'all') {
+        activeFilters[panelKey].clear();
+        el.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      } else {
+        el.querySelector('[data-cat="all"]').classList.remove('active');
+        btn.classList.toggle('active');
+        if (activeFilters[panelKey].has(cat)) activeFilters[panelKey].delete(cat);
+        else activeFilters[panelKey].add(cat);
+        if (activeFilters[panelKey].size === 0) el.querySelector('[data-cat="all"]').classList.add('active');
+      }
+      if (panelKey === 'flashcards') { flashDeck = getFiltered(panelKey); flashIdx = 0; renderCard(); }
+      if (panelKey === 'quiz') resetQuiz();
+      if (panelKey === 'browse') renderBrowse();
+    });
+  });
+}
+
+function getFiltered(panelKey) {
+  const f = activeFilters[panelKey];
+  return f.size === 0 ? [...VOCAB] : VOCAB.filter(v => f.has(v.c));
+}
+
+renderFilters('flash-filters', 'flashcards');
+renderFilters('quiz-filters', 'quiz');
+renderFilters('browse-filters', 'browse');
+
+// ── FLASHCARDS ──
+function renderCard() {
+  if (flashDeck.length === 0) return;
+  flashFlipped = false;
+  const v = flashDeck[flashIdx];
+  document.getElementById('card-label').textContent = 'TERM';
+  document.getElementById('card-front').textContent = v.t;
+  document.getElementById('card-front').style.display = '';
+  document.getElementById('card-back').style.display = 'none';
+  document.getElementById('card-cat').textContent = v.c;
+  document.getElementById('card-hint').textContent = 'click or press space to flip';
+  document.getElementById('card-counter').textContent = `${flashIdx + 1} / ${flashDeck.length}`;
+}
+function flipCard() {
+  flashFlipped = !flashFlipped;
+  const v = flashDeck[flashIdx];
+  if (flashFlipped) {
+    document.getElementById('card-label').textContent = 'DEFINITION';
+    document.getElementById('card-front').style.display = 'none';
+    document.getElementById('card-back').style.display = '';
+    document.getElementById('card-back').textContent = v.d;
+    document.getElementById('card-hint').textContent = 'click to flip back';
+  } else {
+    renderCard();
+  }
+}
+function nextCard() { flashIdx = (flashIdx + 1) % flashDeck.length; renderCard(); }
+function prevCard() { flashIdx = (flashIdx - 1 + flashDeck.length) % flashDeck.length; renderCard(); }
+function shuffleCards() { flashDeck.sort(() => Math.random() - 0.5); flashIdx = 0; renderCard(); }
+renderCard();
+
+// ── QUIZ ──
+function buildQuiz() {
+  const pool = getFiltered('quiz');
+  quizDeck = pool.sort(() => Math.random() - 0.5).slice(0, Math.min(quizTotal, pool.length));
+  quizQ = 0; quizCorrect = 0; quizStreak = 0; quizAnswered = false;
+  renderQuestion();
+}
+
+function renderQuestion() {
+  if (quizQ >= quizDeck.length) { showResults(); return; }
+  quizAnswered = false;
+  document.getElementById('next-btn').style.display = 'none';
+  const item = quizDeck[quizQ];
+  document.getElementById('q-label').textContent = `Question ${quizQ + 1} of ${quizDeck.length}`;
+  document.getElementById('q-cat').textContent = item.c;
+  document.getElementById('quiz-score').textContent = `${quizCorrect} / ${quizQ}`;
+  document.getElementById('quiz-streak').textContent = quizStreak > 1 ? `${quizStreak} streak` : '';
+  document.getElementById('quiz-progress').style.width = `${(quizQ / quizDeck.length) * 100}%`;
+
+  const pool = getFiltered('quiz');
+  // Get 3 wrong answers from same category if possible
+  let wrongs = pool.filter(v => v.t !== item.t);
+  wrongs.sort(() => Math.random() - 0.5);
+  wrongs = wrongs.slice(0, 3);
+
+  const options = [...wrongs, item].sort(() => Math.random() - 0.5);
+
+  if (quizMode === 'term-to-def') {
+    document.getElementById('q-text').textContent = item.t;
+    document.getElementById('choices').innerHTML = options.map((o, i) =>
+      `<div class="choice" data-idx="${i}" data-correct="${o.t === item.t}" onclick="pickAnswer(this)">${o.d}</div>`
+    ).join('');
+  } else {
+    document.getElementById('q-text').textContent = item.d;
+    document.getElementById('choices').innerHTML = options.map((o, i) =>
+      `<div class="choice" data-idx="${i}" data-correct="${o.t === item.t}" onclick="pickAnswer(this)">${o.t}</div>`
+    ).join('');
+  }
+}
+
+function pickAnswer(el) {
+  if (quizAnswered) return;
+  quizAnswered = true;
+  const correct = el.dataset.correct === 'true';
+  const item = quizDeck[quizQ];
+
+  document.querySelectorAll('.choice').forEach(c => {
+    c.classList.add('disabled');
+    if (c.dataset.correct === 'true') { c.classList.add('correct', 'highlight'); }
+  });
+  if (!correct) { el.classList.add('wrong'); }
+
+  if (correct) {
+    quizCorrect++;
+    quizStreak++;
+  } else {
+    quizStreak = 0;
+    stats.missed[item.t] = (stats.missed[item.t] || 0) + 1;
+  }
+  stats.total++;
+  if (correct) stats.correct++;
+  if (quizStreak > stats.bestStreak) stats.bestStreak = quizStreak;
+  saveStats();
+
+  document.getElementById('quiz-score').textContent = `${quizCorrect} / ${quizQ + 1}`;
+  document.getElementById('quiz-streak').textContent = quizStreak > 1 ? `${quizStreak} streak` : '';
+  document.getElementById('next-btn').style.display = '';
+}
+
+function nextQuestion() { quizQ++; renderQuestion(); }
+function resetQuiz() { buildQuiz(); }
+function showResults() {
+  document.getElementById('q-label').textContent = 'Quiz Complete!';
+  document.getElementById('q-text').textContent = `You got ${quizCorrect} out of ${quizDeck.length} correct (${Math.round(quizCorrect/quizDeck.length*100)}%)`;
+  document.getElementById('q-cat').textContent = '';
+  document.getElementById('choices').innerHTML = '';
+  document.getElementById('next-btn').style.display = 'none';
+  document.getElementById('quiz-progress').style.width = '100%';
+}
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    quizMode = btn.dataset.mode;
+    resetQuiz();
+  });
+});
+
+buildQuiz();
+
+// ── BROWSE ──
+function renderBrowse() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const pool = getFiltered('browse');
+  const filtered = q ? pool.filter(v => v.t.toLowerCase().includes(q) || v.d.toLowerCase().includes(q)) : pool;
+  document.getElementById('term-list').innerHTML = filtered.map(v =>
+    `<div class="term-entry"><span class="te-term">${v.t}</span><span class="te-cat">${v.c}</span><div class="te-def">${v.d}</div></div>`
+  ).join('');
+}
+document.getElementById('search-input').addEventListener('input', renderBrowse);
+renderBrowse();
+
+// ── STATS ──
+function renderStats() {
+  document.getElementById('s-total').textContent = stats.total;
+  document.getElementById('s-correct').textContent = stats.correct;
+  document.getElementById('s-pct').textContent = stats.total ? Math.round(stats.correct / stats.total * 100) + '%' : '0%';
+  document.getElementById('s-streak').textContent = stats.bestStreak;
+
+  const missed = Object.entries(stats.missed).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  if (missed.length === 0) {
+    document.getElementById('missed-items').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">No missed terms yet. Start quizzing!</p>';
+  } else {
+    document.getElementById('missed-items').innerHTML = missed.map(([term, count]) => {
+      const v = VOCAB.find(x => x.t === term);
+      return `<div class="missed-item"><span class="mi-term">${term}</span> (missed ${count}x)<div class="mi-def">${v ? v.d : ''}</div></div>`;
+    }).join('');
+  }
+}
+
+function resetStats() {
+  stats = { total: 0, correct: 0, bestStreak: 0, missed: {} };
+  saveStats();
+  renderStats();
+}
+
+// ── KEYBOARD ──
+document.addEventListener('keydown', e => {
+  const active = document.querySelector('.panel.active').id;
+  if (active === 'flashcards') {
+    if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); flipCard(); }
+    if (e.key === 'ArrowRight') nextCard();
+    if (e.key === 'ArrowLeft') prevCard();
+  }
+  if (active === 'quiz') {
+    if (e.target.tagName === 'INPUT') return;
+    if (!quizAnswered && e.key >= '1' && e.key <= '4') {
+      const idx = parseInt(e.key) - 1;
+      const choices = document.querySelectorAll('.choice');
+      if (choices[idx]) pickAnswer(choices[idx]);
+    }
+    if (quizAnswered && (e.key === 'Enter' || e.key === 'ArrowRight')) nextQuestion();
+  }
+});
+</script>
+</body>
+</html>
