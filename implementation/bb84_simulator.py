@@ -286,8 +286,17 @@ class BB84Protocol:
             self.channel = ClassicalQuantumChannel(
                 error_rate=error_rate, eavesdrop=eavesdrop
             )
+        elif backend == "realistic_noise":
+            from qiskit_advanced import RealisticNoiseChannel
+            self.channel = RealisticNoiseChannel(eavesdrop=eavesdrop)
+        elif backend == "ibm_hardware":
+            from qiskit_advanced import IBMQuantumChannel
+            self.channel = IBMQuantumChannel(eavesdrop=eavesdrop)
         else:
-            raise ValueError(f"Unknown backend: {backend!r} (use 'qiskit' or 'classical')")
+            raise ValueError(
+                f"Unknown backend: {backend!r} "
+                "(use 'qiskit', 'classical', 'realistic_noise', or 'ibm_hardware')"
+            )
         self.qber_threshold = qber_threshold
         self.sample_fraction = sample_fraction
 
