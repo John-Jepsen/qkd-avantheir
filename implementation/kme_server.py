@@ -167,7 +167,66 @@ class KeyPool:
         return len(self._available)
 
 
-pool = KeyPool()
+def _create_pool(key_source: str = "simulator", upstream_kme: str = "",
+                  vendor: str = "", client_cert: str = "") -> KeyPool:
+    """Create the appropriate key pool based on CLI configuration."""
+    if key_source == "tsf":
+        from vendor_quintessence import TSFKeySource, TSFConfig
+        log.info("Using QuintessenceLabs TSF key source")
+        # TSFKeySource is used via the KeySource protocol;
+        # wrap it in a KeyPool-compatible interface by monkey-patching _generate
+        config = TSFConfig.from_env()
+        source = TSFKeySource(config)
+        p = KeyPool.__new__(KeyPool)
+        p._available = {}
+        p._available_order = deque()
+        p._pending = {}
+        p._lock = threading.Lock()
+        p._proto = None
+        p._vendor_source = source
+        original_generate = p._generate
+        def vendor_generate(size_bits=DEFAULT_KEY_SIZE):
+            return source.generate(size_bits)
+        p._generate = vendor_generate
+        log.info("Initialising TSF-backed key pool (target: %d keys)...", POOL_TARGET)
+        p._fill_to_target()
+        log.info("Key pool ready: %d keys available", len(p._available))
+        return p
+
+    if upstream_kme:
+        if vendor == "toshiba":
+            from vendor_toshiba import ToshibaHighRatePool, ToshibaConfig
+            log.info("Using Toshiba high-rate pool -> %s", upstream_kme)
+            config = ToshibaConfig.from_env()
+            config.base_url = upstream_kme
+            if client_cert:
+                config.client_cert = client_cert
+            return ToshibaHighRatePool(config)
+
+        if vendor == "quantumctek":
+            from vendor_quantumctek import QCTekNMSClient, QCTekConfig, QCTekETSI014Adapter
+            log.info("Using QuantumCTek NMS -> %s", upstream_kme)
+            config = QCTekConfig.from_env()
+            config.nms_url = upstream_kme
+            # Return a proxy pool using the ETSI 014 adapter
+            from vendor_idq import CerberisProxyPool, CerberisConfig
+            idq_config = CerberisConfig(
+                base_url=f"{upstream_kme}/etsi",
+                client_cert=client_cert,
+            )
+            return CerberisProxyPool(idq_config)
+
+        # Default: ID Quantique Cerberis XG (standard ETSI 014)
+        from vendor_idq import CerberisProxyPool, CerberisConfig
+        log.info("Using ETSI 014 proxy -> %s", upstream_kme)
+        config = CerberisConfig(base_url=upstream_kme, client_cert=client_cert)
+        return CerberisProxyPool(config)
+
+    # Default: BB84 simulator
+    return KeyPool()
+
+
+pool = _create_pool()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -262,13 +321,47 @@ def handle_error(e):
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("ETSI GS QKD 014 KME Server (BB84-backed simulation)")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ETSI GS QKD 014 KME Server")
+    parser.add_argument("--key-source", default="simulator",
+                        choices=["simulator", "tsf"],
+                        help="Key source backend (default: simulator)")
+    parser.add_argument("--upstream-kme", default="",
+                        help="Upstream KME URL for proxy mode (e.g., https://cerberis.local:8443)")
+    parser.add_argument("--vendor", default="",
+                        choices=["", "toshiba", "quantumctek"],
+                        help="Vendor-specific mode for upstream KME")
+    parser.add_argument("--client-cert", default="",
+                        help="Path to client certificate for mTLS")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
+
+    # Re-create pool with CLI args (replaces the module-level default)
+    pool = _create_pool(
+        key_source=args.key_source,
+        upstream_kme=args.upstream_kme,
+        vendor=args.vendor,
+        client_cert=args.client_cert,
+    )
+
+    source_label = "BB84 simulator"
+    if args.key_source == "tsf":
+        source_label = "QuintessenceLabs TSF"
+    elif args.upstream_kme:
+        vendor_labels = {"toshiba": "Toshiba KME", "quantumctek": "QuantumCTek NMS"}
+        source_label = vendor_labels.get(args.vendor, "ETSI 014 proxy (IDQ Cerberis)")
+        source_label += f" -> {args.upstream_kme}"
+
+    print(f"ETSI GS QKD 014 KME Server ({source_label})")
     print("=" * 55)
     print(f"  KME ID : {KME_ID}")
-    print(f"  API    : http://127.0.0.1:5000/api/v1/keys/")
+    print(f"  Source : {source_label}")
+    print(f"  API    : http://{args.host}:{args.port}/api/v1/keys/")
     print()
     print("  Example requests:")
-    print("    curl http://127.0.0.1:5000/api/v1/keys/sae-bob/status")
-    print("    curl http://127.0.0.1:5000/api/v1/keys/sae-bob/enc_keys")
+    print(f"    curl http://{args.host}:{args.port}/api/v1/keys/sae-bob/status")
+    print(f"    curl http://{args.host}:{args.port}/api/v1/keys/sae-bob/enc_keys")
     print()
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host=args.host, port=args.port, debug=False)
