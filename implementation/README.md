@@ -35,8 +35,14 @@ circuits (Aer simulator) by default, with a classical fallback available.
 
 | File | Purpose |
 |------|---------|
-| `bb84_simulator.py` | BB84 protocol on Qiskit Aer: quantum circuit preparation (X/H gates), depolarizing noise channel, basis sifting, QBER, error correction, privacy amplification. Dual-backend: `qiskit` (default) or `classical` fallback. |
-| `kme_server.py` | ETSI GS QKD 014 REST API backed by BB84 simulator |
+| `bb84_simulator.py` | BB84 protocol on Qiskit Aer: quantum circuit preparation (X/H gates), depolarizing noise channel, basis sifting, QBER, error correction, privacy amplification. Backends: `qiskit` (default), `classical`, `realistic_noise`, `ibm_hardware`. |
+| `qiskit_advanced.py` | Advanced Qiskit: device-calibrated noise (RealisticNoiseChannel), IBM Quantum hardware (IBMQuantumChannel), multi-pass Cascade error correction |
+| `key_source.py` | Vendor-agnostic KeySource protocol and BB84KeySource wrapper |
+| `kme_server.py` | ETSI GS QKD 014 REST API — supports BB84 simulator, vendor proxy, or TSF backends via CLI flags |
+| `vendor_idq.py` | ID Quantique Cerberis XG integration: ETSI 014 client, proxy pool, health monitor |
+| `vendor_toshiba.py` | Toshiba KME integration: DWDM monitoring, bulk pre-fetch, extended status |
+| `vendor_quintessence.py` | QuintessenceLabs TSF integration: REST/KMIP key source, health checker |
+| `vendor_quantumctek.py` | QuantumCTek NMS integration: relay orchestration, topology sync, ETSI 014 adapter |
 | `tls_psk_demo.py` | End-to-end PSK demo: Alice and Bob fetch the same key, encrypt a message |
 | `ikev2_ppk_config.md` | strongSwan IKEv2 configuration guide for RFC 8784 PPK |
 | `ml_eavesdrop_classifier.py` | Random Forest eavesdropper detection (replaces hard QBER threshold) |
@@ -79,11 +85,24 @@ result = BB84Protocol(backend="classical").run(n_bits=4096)
 ### 2 — Run the KME server
 
 ```bash
+# Default: BB84 simulator backend
 python kme_server.py
+
+# QuintessenceLabs TSF backend
+python kme_server.py --key-source tsf
+
+# ID Quantique Cerberis XG proxy
+python kme_server.py --upstream-kme https://cerberis.local:8443
+
+# Toshiba high-rate pool
+python kme_server.py --upstream-kme https://toshiba-kme.local:8443 --vendor toshiba
+
+# QuantumCTek NMS
+python kme_server.py --upstream-kme https://qctek-nms.local:9443 --vendor quantumctek
 ```
 
 The server starts on `http://127.0.0.1:5000` and pre-generates 50 keys from
-the BB84 simulator. It refills automatically in the background as keys are
+the configured backend. It refills automatically in the background as keys are
 consumed.
 
 ```bash
@@ -284,8 +303,8 @@ curl -X POST http://127.0.0.1:8000/detect-anomaly \
 
 | This simulation | Real deployment |
 |----------------|----------------|
-| `bb84_simulator.py` (Qiskit Aer) | Physical QKD hardware (Toshiba, ID Quantique, etc.) |
-| Single `kme_server.py` | Paired KMEs at each end, synchronized via quantum channel |
+| `bb84_simulator.py` (Qiskit Aer) | Physical QKD hardware (Toshiba, ID Quantique, etc.) — or use `--upstream-kme` to proxy to real hardware |
+| Single `kme_server.py` | Paired KMEs at each end, synchronized via quantum channel. Vendor modules (`vendor_idq`, `vendor_toshiba`, `vendor_quintessence`, `vendor_quantumctek`) provide hardware integration |
 | `key_ID` sent over TCP | `key_ID` exchanged via management plane or IKE negotiation |
 | AES-256-GCM channel | TLS 1.3 external PSK (RFC 8446), IKEv2 PPK (RFC 8784), or ETSI service mesh rekeying |
 
