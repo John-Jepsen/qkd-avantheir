@@ -1,6 +1,6 @@
 # QKD System Architecture Diagram
 
-Supplements `capstone-outline.md`. Shows the full key delivery pipeline including the dual-KME deployment, trusted-node relay network, hybrid QKD+ML-KEM key derivation, and metrics monitoring.
+Supplements `capstone-outline.md`. Shows the full key delivery pipeline including the dual-KME deployment, trusted-node relay network, hybrid QKD+ML-KEM key derivation, ML security layer, FastAPI adaptive security pipeline, and metrics monitoring.
 
 ---
 
@@ -65,6 +65,36 @@ flowchart TD
     end
 
     API_A -.-> HYBRID
+
+    subgraph ML_LAYER["ML Security Layer"]
+        EAVES["ml_eavesdrop_classifier.py\nRandomForest\n(QBER · sift ratio ·\nerror variance · burst len)"]
+        ATTACK["ml_attack_classifier.py\nGradientBoosting\n(clean · intercept_resend ·\nbeam_splitting · PNS · trojan_horse)"]
+        NOISE["ml_noise_predictor.py\nARIMA\n(QBER time-series forecast)"]
+        TUNER["ml_parameter_tuner.py\nGradientBoosting Regressor\n(optimal n_bits · sample_fraction ·\nblock_size per noise level)"]
+        KME_ANOM["ml_kme_anomaly.py\nIsolation Forest\n(KME traffic anomaly detection)"]
+    end
+
+    SIM_A -. "BB84 result stats" .-> EAVES
+    SIM_A -. "BB84 result stats" .-> ATTACK
+    METRICS -. "QBER history" .-> NOISE
+    NOISE -. "forecast" .-> TUNER
+    TUNER -. "recommended params" .-> SIM_A
+    POOL_A -. "key request traffic" .-> KME_ANOM
+
+    subgraph FASTAPI["FastAPI Adaptive Security Pipeline\napi.py  (port 8000)"]
+        EP_ANALYZE["POST /analyze\nBB84 + all ML models →\nunified security report"]
+        EP_FORECAST["POST /forecast\nQBER forecast for next N rounds"]
+        EP_RECOMMEND["POST /recommend\nOptimal BB84 params\nfor given noise level"]
+        EP_ANOMALY["POST /detect-anomaly\nClassify KME traffic window"]
+        EP_HEALTH["GET /health\nPipeline status"]
+        EP_MODELS["GET /models\nLoaded model details"]
+    end
+
+    ML_LAYER -. "model inference" .-> FASTAPI
+    SIM_A -. "simulation engine" .-> FASTAPI
+    METRICS -. "pipeline metrics" .-> FASTAPI
+
+    API_A -.-> HYBRID
 ```
 
 ---
@@ -103,6 +133,44 @@ flowchart LR
 ```
 
 > **Security note:** each trusted relay node transiently holds the session key in cleartext. End-to-end security requires physical security at every node. This is the same model used in the Beijing-Shanghai backbone (BSBN) and EuroQCI.
+
+---
+
+## ML Adaptive Security Pipeline (Closed-Loop)
+
+```mermaid
+sequenceDiagram
+    participant API as FastAPI (api.py :8000)
+    participant BB84 as BB84 Simulator
+    participant Eaves as Eavesdrop Classifier<br/>(RandomForest)
+    participant Atk as Attack Classifier<br/>(GradientBoosting)
+    participant Noise as Noise Predictor<br/>(ARIMA)
+    participant Tuner as Parameter Tuner<br/>(GB Regressor)
+    participant KME as KME Anomaly Detector<br/>(Isolation Forest)
+
+    Note over API: POST /analyze
+    API->>BB84: run simulation (n_bits, noise_level)
+    BB84-->>API: BB84Result (QBER, sift ratio, key bits)
+
+    API->>Eaves: predict(QBER, sift_ratio, error_var, burst_len)
+    Eaves-->>API: eavesdropper_detected: bool, confidence
+
+    API->>Atk: classify(BB84Result features)
+    Atk-->>API: attack_type (5 classes), confidence
+
+    API->>Noise: forecast(steps=10)
+    Noise-->>API: predicted QBER trajectory, alert flag
+
+    API->>Tuner: recommend(observed_noise)
+    Tuner-->>API: optimal n_bits, sample_fraction, block_size
+
+    API->>KME: detect(traffic window)
+    KME-->>API: anomaly flags per record
+
+    Note over API: Returns unified SecurityReport<br/>with all model outputs + recommendations
+```
+
+> **Closed-loop design:** The noise predictor feeds the parameter tuner, which adjusts BB84 simulator parameters proactively — before QBER rises above the 11% abort threshold. The API's `/analyze` endpoint runs the full pipeline in a single call, while individual endpoints (`/forecast`, `/recommend`, `/detect-anomaly`) allow targeted queries.
 
 ---
 

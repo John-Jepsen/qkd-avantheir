@@ -21,13 +21,26 @@ qkd-avantheir/
 ├── DOCS/
 │   ├── capstone-outline.md     # Submission 2 outline with milestones and tech stack
 │   ├── capstone-brief.md       # Concise project brief for submission
+│   ├── system-architecture-diagram.md  # Mermaid diagrams: pipeline, relay, hybrid, ML layer, FastAPI
 │   ├── vocab-study-guide.md    # QKD terminology reference (245 entries)
 │   └── images/qkd-image.jpeg   # Architecture diagram
 ├── implementation/
 │   ├── bb84_simulator.py       # BB84 on IBM Qiskit Aer: quantum circuits, depolarizing noise, dual-backend
 │   ├── kme_server.py           # Flask ETSI GS QKD 014 REST API with thread-safe key pool
+│   ├── kme_dual.py             # Dual-KME deployment (Alice port 5001, Bob port 5002) with peer sync
 │   ├── tls_psk_demo.py         # End-to-end TLS PSK demo: Alice/Bob AES-256-GCM via KME
 │   ├── ikev2_ppk_config.md     # strongSwan RFC 8784 PPK config guide
+│   ├── hybrid_kdf.py           # Hybrid QKD+ML-KEM key derivation (HKDF-SHA256, ETSI TS 104 015)
+│   ├── relay_network.py        # Trusted-node relay network (XOR hop-by-hop key relay)
+│   ├── metrics.py              # MetricsCollector: QBER, key rate, pool depth tracking
+│   ├── api.py                  # FastAPI adaptive security pipeline (port 8000) — closed-loop ML
+│   ├── ml_eavesdrop_classifier.py  # RandomForest eavesdrop detection (replaces hard 11% threshold)
+│   ├── ml_attack_classifier.py     # GradientBoosting 5-class attack classifier
+│   ├── ml_noise_predictor.py       # ARIMA QBER time-series forecasting
+│   ├── ml_parameter_tuner.py       # GB Regressor for optimal BB84 parameter selection
+│   ├── ml_kme_anomaly.py           # Isolation Forest KME traffic anomaly detection
+│   ├── train_all_models.py     # One-shot training script for all ML models
+│   ├── visualize_bb84.py       # BB84 visualization (circuit, QBER, noise sweep, key yield)
 │   └── README.md               # Quick-start with three-terminal setup
 └── research-outputs /          # Note: trailing space in directory name
     ├── qkd_signal_research_agent_prompt.md
@@ -42,7 +55,8 @@ Each numbered directory (01–06) also contains a `phase*.md` supporting researc
 - **Vendor coverage**: Toshiba, ID Quantique/IonQ, QuantumCTek, LuxQuanta, Q*Bird, QuintessenceLabs (Tier 1-2 QKD vendors) plus IBM (PQC/research) and Lockheed Martin (defense integration)
 - **Standards**: RFC 8446 (TLS 1.3), RFC 8784 (IKEv2 mixed-PSK), ETSI GS QKD 004/014/015/016, ETSI TS 104 015 (hybrid), IETF RFC 9794 (hybrid terminology), NIST FIPS 203/204/205 (PQC)
 - **Strategic framing**: QKD vs PQC is not either/or — the docs map where each is appropriate. Hybrid QKD+PQC is the recommended architecture for highest-assurance deployments.
-- **Implementation stack**: Python 3.10+, IBM Qiskit 2.x / Qiskit Aer 0.17.x (quantum circuit simulator), Flask, `cryptography` library, `requests`. QBER abort threshold: >11%.
+- **Implementation stack**: Python 3.10+, IBM Qiskit 2.x / Qiskit Aer 0.17.x (quantum circuit simulator), Flask, FastAPI/Uvicorn, scikit-learn, statsmodels (ARIMA), `cryptography` library, `requests`. QBER abort threshold: >11%.
+- **ML security layer**: Five ML models form a closed-loop adaptive pipeline — eavesdrop detection (RandomForest), attack classification (GradientBoosting, 5 classes), QBER forecasting (ARIMA), parameter tuning (GB Regressor), and KME traffic anomaly detection (Isolation Forest). The FastAPI service (`api.py`) unifies all models behind REST endpoints.
 
 ## Writing Conventions
 
