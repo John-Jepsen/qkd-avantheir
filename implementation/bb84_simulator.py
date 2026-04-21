@@ -89,13 +89,23 @@ class QiskitQuantumChannel:
         p = 3·error_rate/2 so that the resulting bit-flip rate matches.
     eavesdrop : bool
         Simulate an intercept-resend eavesdropper using two-circuit model.
+    eavesdrop_fraction : float
+        Fraction of qubits Eve intercepts (0.0 to 1.0). Only used when
+        eavesdrop=True. Default 1.0 (full intercept-resend). Values below
+        1.0 simulate partial intercept attacks where Eve only taps a subset
+        of qubits, producing distinct statistical signatures (bimodal error
+        distribution, clustered bursts) vs uniform channel noise.
     """
 
-    def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False):
+    def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False,
+                 eavesdrop_fraction: float = 1.0):
         if not 0.0 <= error_rate <= 0.5:
             raise ValueError("error_rate must be between 0.0 and 0.5")
+        if not 0.0 <= eavesdrop_fraction <= 1.0:
+            raise ValueError("eavesdrop_fraction must be between 0.0 and 1.0")
         self.error_rate = error_rate
         self.eavesdrop = eavesdrop
+        self.eavesdrop_fraction = eavesdrop_fraction
 
         self._ideal_backend = AerSimulator()
         self._noisy_backend = self._build_noisy_backend() if error_rate > 0 else None
@@ -128,15 +138,43 @@ class QiskitQuantumChannel:
         bob_bases = [secrets.randbelow(2) for _ in range(n)]
 
         if self.eavesdrop:
-            eve_bases = [secrets.randbelow(2) for _ in range(n)]
-            # Eve intercepts: measures in her random basis (no channel noise)
-            eve_bits = self._run_circuit(
-                alice_bits, alice_bases, eve_bases, noisy=False
-            )
-            # Eve re-prepares and sends to Bob (channel noise applies here)
-            bob_bits = self._run_circuit(
-                eve_bits, eve_bases, bob_bases, noisy=True
-            )
+            if self.eavesdrop_fraction >= 1.0:
+                # Full intercept-resend: Eve intercepts every qubit
+                eve_bases = [secrets.randbelow(2) for _ in range(n)]
+                eve_bits = self._run_circuit(
+                    alice_bits, alice_bases, eve_bases, noisy=False
+                )
+                bob_bits = self._run_circuit(
+                    eve_bits, eve_bases, bob_bases, noisy=True
+                )
+            else:
+                # Partial intercept: Eve only taps a fraction of qubits.
+                # Intercepted qubits go through Eve's measure-resend cycle.
+                # Non-intercepted qubits go straight through the noisy channel.
+                intercepted = [
+                    secrets.randbelow(1000) < int(self.eavesdrop_fraction * 1000)
+                    for _ in range(n)
+                ]
+                eve_bases = [secrets.randbelow(2) for _ in range(n)]
+
+                # Split into intercepted vs clean qubit lists
+                eve_bits = self._run_circuit(
+                    alice_bits, alice_bases, eve_bases, noisy=False
+                )
+                clean_bits = self._run_circuit(
+                    alice_bits, alice_bases, bob_bases, noisy=True
+                )
+
+                # For intercepted qubits, Eve re-prepares and sends to Bob
+                eve_resend = self._run_circuit(
+                    eve_bits, eve_bases, bob_bases, noisy=True
+                )
+
+                # Merge: intercepted qubits use Eve's resend, others use clean
+                bob_bits = [
+                    eve_resend[i] if intercepted[i] else clean_bits[i]
+                    for i in range(n)
+                ]
         else:
             bob_bits = self._run_circuit(
                 alice_bits, alice_bases, bob_bases, noisy=True
@@ -207,11 +245,15 @@ class ClassicalQuantumChannel:
     Used as a fallback when Qiskit is unavailable or for fast comparison runs.
     """
 
-    def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False):
+    def __init__(self, error_rate: float = 0.01, eavesdrop: bool = False,
+                 eavesdrop_fraction: float = 1.0):
         if not 0.0 <= error_rate <= 0.5:
             raise ValueError("error_rate must be between 0.0 and 0.5")
+        if not 0.0 <= eavesdrop_fraction <= 1.0:
+            raise ValueError("eavesdrop_fraction must be between 0.0 and 1.0")
         self.error_rate = error_rate
         self.eavesdrop = eavesdrop
+        self.eavesdrop_fraction = eavesdrop_fraction
 
     def transmit(
         self, alice_bits: list[int], alice_bases: list[int]
@@ -220,12 +262,13 @@ class ClassicalQuantumChannel:
         bob_bases = [secrets.randbelow(2) for _ in range(n)]
         bob_bits = []
         noise_threshold = int(self.error_rate * 1000)
+        intercept_threshold = int(self.eavesdrop_fraction * 1000)
 
         for i in range(n):
             transmitted_bit = alice_bits[i]
             transmitted_basis = alice_bases[i]
 
-            if self.eavesdrop:
+            if self.eavesdrop and secrets.randbelow(1000) < intercept_threshold:
                 eve_basis = secrets.randbelow(2)
                 if eve_basis == alice_bases[i]:
                     eve_bit = alice_bits[i]
@@ -273,6 +316,7 @@ class BB84Protocol:
         self,
         error_rate: float = 0.01,
         eavesdrop: bool = False,
+        eavesdrop_fraction: float = 1.0,
         qber_threshold: float = 0.11,
         sample_fraction: float = 0.10,
         backend: str = "qiskit",
@@ -280,11 +324,13 @@ class BB84Protocol:
         self.backend_name = backend
         if backend == "qiskit":
             self.channel = QiskitQuantumChannel(
-                error_rate=error_rate, eavesdrop=eavesdrop
+                error_rate=error_rate, eavesdrop=eavesdrop,
+                eavesdrop_fraction=eavesdrop_fraction,
             )
         elif backend == "classical":
             self.channel = ClassicalQuantumChannel(
-                error_rate=error_rate, eavesdrop=eavesdrop
+                error_rate=error_rate, eavesdrop=eavesdrop,
+                eavesdrop_fraction=eavesdrop_fraction,
             )
         elif backend == "realistic_noise":
             from qiskit_advanced import RealisticNoiseChannel

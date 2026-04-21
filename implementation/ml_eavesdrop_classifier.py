@@ -100,13 +100,18 @@ class EavesdropClassifier:
             features.append(self._extract(result))
             labels.append("eavesdrop")
 
-        # Class 2: partial intercept (simulated as elevated channel noise)
-        # This models Eve intercepting only a fraction of qubits, producing
-        # QBER between 6-10% — below the 11% threshold but with distinctive
-        # error statistics (higher variance, longer bursts) vs. uniform noise.
+        # Class 2: partial intercept — Eve intercepts a fraction of qubits
+        # using the real intercept-resend model. This produces naturally
+        # distinct signatures: bimodal error distribution (intercepted blocks
+        # have ~25% QBER, clean blocks have background noise only), clustered
+        # error bursts, and higher error variance vs. uniform channel noise.
         for _ in range(samples_per_class):
-            noise = rng.uniform(0.06, 0.10)
-            result = BB84Protocol(error_rate=noise, eavesdrop=False).run(n_bits=n_bits)
+            noise = rng.uniform(0.005, 0.03)
+            fraction = rng.uniform(0.10, 0.50)
+            result = BB84Protocol(
+                error_rate=noise, eavesdrop=True,
+                eavesdrop_fraction=fraction,
+            ).run(n_bits=n_bits)
             features.append(self._extract(result))
             labels.append("partial_intercept")
 

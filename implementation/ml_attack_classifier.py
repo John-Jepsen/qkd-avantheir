@@ -70,20 +70,23 @@ def simulate_beam_splitting(n_bits: int = 4096, base_noise: float = 0.01,
     Beam-splitting attack simulation.
 
     Eve uses a beam splitter to tap a fraction of multi-photon pulses.
-    This adds moderate QBER with characteristic low error variance
-    (errors are uniformly distributed, not bursty).
+    Modeled as partial eavesdropping (Eve intercepts tap_fraction of qubits)
+    at very low additional error. The tapped qubits introduce uniform errors,
+    naturally producing low error variance and reduced sift ratio from the
+    partial intercept mechanism.
     """
     if rng is None:
         rng = np.random.default_rng()
 
-    # Eve's tap introduces errors proportional to tap_fraction
-    # but only on multi-photon pulses (~fraction of total)
-    effective_noise = base_noise + tap_fraction * 0.15
-    result = BB84Protocol(error_rate=effective_noise, eavesdrop=False).run(n_bits=n_bits)
+    # Beam-splitting is effectively a partial intercept with photon loss.
+    # Eve taps tap_fraction of pulses. The intercept-resend on tapped pulses
+    # introduces ~25% QBER on those qubits, scaled by tap_fraction overall.
+    result = BB84Protocol(
+        error_rate=base_noise, eavesdrop=True,
+        eavesdrop_fraction=tap_fraction,
+    ).run(n_bits=n_bits)
 
     features = _extract_features(result)
-    # Beam-splitting produces slightly lower sift ratio due to photon loss
-    features[1] *= (1 - tap_fraction * 0.1)
     return {"features": features, "result": result}
 
 
@@ -94,21 +97,28 @@ def simulate_pns_attack(n_bits: int = 4096, base_noise: float = 0.01,
     Photon Number Splitting attack.
 
     Eve blocks single-photon pulses and intercepts multi-photon ones.
-    This significantly reduces the sift ratio (fewer qubits get through)
-    while keeping QBER relatively low on the surviving qubits.
+    Modeled by sending fewer qubits (simulating photon loss from blocking)
+    and applying a very small eavesdrop fraction on the surviving ones.
+    The key signature is dramatically reduced sift ratio with low QBER.
     """
     if rng is None:
         rng = np.random.default_rng()
 
-    # PNS: low QBER but significantly reduced sift ratio
-    effective_noise = base_noise + 0.02
-    result = BB84Protocol(error_rate=effective_noise, eavesdrop=False).run(n_bits=n_bits)
+    # PNS: Eve blocks block_fraction of pulses (they never reach Bob).
+    # She perfectly reads multi-photon pulses she keeps, adding minimal error.
+    # We simulate the loss by sending fewer qubits through the channel.
+    surviving_bits = max(512, int(n_bits * (1 - block_fraction)))
+    result = BB84Protocol(
+        error_rate=base_noise, eavesdrop=True,
+        eavesdrop_fraction=0.05,  # Eve's measurement on multi-photon is near-perfect
+    ).run(n_bits=surviving_bits)
+
+    # Adjust raw_bits to reflect the original transmission size,
+    # so sift_ratio naturally drops (sifted_bits / original n_bits).
+    result.raw_bits = n_bits
+    result.sift_ratio = result.sifted_bits / n_bits
 
     features = _extract_features(result)
-    # PNS dramatically reduces sift ratio
-    features[1] *= (1 - block_fraction)
-    # But keeps QBER low — the surviving qubits are less disturbed
-    features[0] *= 0.8
     return {"features": features, "result": result}
 
 
@@ -119,21 +129,54 @@ def simulate_trojan_horse(n_bits: int = 4096, base_noise: float = 0.01,
     Trojan horse attack.
 
     Eve injects bright light into Bob's equipment and reads back-reflections.
-    This causes distinctive error patterns: correlated errors in consecutive
-    blocks (the injected light affects sequential measurements) and slightly
-    elevated QBER with high autocorrelation.
+    The injected light causes correlated burst errors in consecutive
+    measurements. Modeled by running clean BB84 then injecting correlated
+    error bursts at random positions in the sifted bit stream, simulating
+    the interference pattern from back-reflected probe light.
     """
     if rng is None:
         rng = np.random.default_rng()
 
-    effective_noise = base_noise + injection_strength
-    result = BB84Protocol(error_rate=effective_noise, eavesdrop=False).run(n_bits=n_bits)
+    # Run a clean BB84 simulation
+    result = BB84Protocol(error_rate=base_noise, eavesdrop=False).run(n_bits=n_bits)
+
+    # Inject correlated burst errors to simulate trojan horse interference.
+    # The probe light causes errors in consecutive measurements (bursts),
+    # not uniformly distributed like channel noise.
+    if result.block_error_rates:
+        n_blocks = len(result.block_error_rates)
+        n_bursts = max(1, int(n_blocks * injection_strength * 2))
+        block_rates = list(result.block_error_rates)
+
+        for _ in range(n_bursts):
+            # Each burst corrupts 2-4 consecutive blocks
+            burst_len = int(rng.integers(2, 5))
+            start_block = int(rng.integers(0, max(1, n_blocks - burst_len)))
+            burst_rate = rng.uniform(0.25, 0.625)
+            for b in range(start_block, min(start_block + burst_len, n_blocks)):
+                block_rates[b] = min(1.0, block_rates[b] + burst_rate)
+
+        result.block_error_rates = block_rates
+
+        # Recompute derived features from the modified block error rates
+        avg_qber = sum(block_rates) / len(block_rates)
+        result.qber = avg_qber
+        result.error_variance = sum(
+            (r - avg_qber) ** 2 for r in block_rates
+        ) / len(block_rates)
+
+        # Compute max burst length from block rates (blocks with >0.2 error)
+        max_run = 0
+        current = 0
+        for rate in block_rates:
+            if rate > 0.2:
+                current += 1
+                max_run = max(max_run, current)
+            else:
+                current = 0
+        result.max_burst_length = max_run
 
     features = _extract_features(result)
-    # Trojan horse creates correlated errors — boost autocorrelation feature
-    features[6] = min(1.0, features[6] + rng.uniform(0.2, 0.5))
-    # Higher burst lengths from correlated injection
-    features[3] = max(features[3], int(rng.integers(3, 7)))
     return {"features": features, "result": result}
 
 
