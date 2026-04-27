@@ -1,98 +1,60 @@
-# QKD Key Infrastructure - Avantheir Initiative
+# QKD Key Infrastructure — Avantheir Initiative
 
-## Overview
+![QKD UML Diagram](DOCS/images/qkd-image.png)
 
-This repository contains technical documentation and implementation guidance for integrating Quantum Key Distribution (QKD) into enterprise security infrastructure, replacing classical key exchange (Diffie-Hellman/ECDHE) with QKD-derived symmetric material.
+ML-augmented Quantum Key Distribution for enterprise security. Replaces classical key exchange (DH/ECDHE) with QKD-derived symmetric material across TLS 1.3, IPsec/IKEv2, and service mesh authentication.
 
-![QKD System Architecture](DOCS/images/qkd-image.jpeg)
+## Structure
 
-## Scope
+| Directory | Contents |
+|-----------|----------|
+| `01-qkd-foundations/` | BB84, CV-QKD, MDI-QKD, TF-QKD protocols and global deployments |
+| `02-tls-integration/` | TLS 1.3 PSK + hybrid QKD+PQC |
+| `03-ipsec-ikev2-integration/` | IPsec RFC 8784 mixed-PSK |
+| `04-service-mesh-auth/` | Symmetric rekeying, SDN-controlled allocation |
+| `05-key-management/` | ETSI QKD 014 key lifecycle |
+| `06-vendor-analysis/` | Toshiba, IDQ/IonQ, QuantumCTek, LuxQuanta, Q\*Bird, QLabs, IBM, Lockheed |
+| `07-operational-constraints/` | Distance, cost, failure modes, certification gaps |
+| `08-references/` | Full reference list |
+| `implementation/` | BB84 simulator, KME server, ML pipeline, adversarial gym |
+| `frontend/` | React + D3 adversarial benchmark dashboard |
+| `DOCS/` | Capstone outline, architecture diagrams, vocab guide |
 
-| Integration Target | Mechanism | Standard Reference |
-|-------------------|-----------|-------------------|
-| TLS 1.3 / mTLS | PSK and key-update flows | RFC 8446 |
-| IPsec/IKEv2 VPN | RFC 8784 mixed-PSK pattern | RFC 8784 |
-| Service-to-service auth | Short-interval symmetric rekeying | ETSI GS QKD 014 |
-| Hybrid QKD+PQC | Combined key derivation | ETSI TS 104 015, IETF RFC 9794 |
-
-## Baseline Protocol
-
-**Discrete-Variable QKD (BB84-style)** is the baseline due to deployment realism. CV-QKD is included where it offers unique practical advantage (metro cost, telecom compatibility). MDI-QKD and TF-QKD are covered for their security and distance properties.
-
-## Vendor Coverage
-
-### Tier 1 — Established Commercial QKD Vendors
-
-- **Toshiba** (Japan/UK) — High-performance DV-QKD, 33.4 Tbps DWDM co-existence, cross-state fiber demonstrations
-- **ID Quantique / IonQ** (Switzerland/USA) — Commercial DV-QKD market leader, Cerberis XG platform, acquired by IonQ for $250M (Feb 2025)
-- **QuantumCTek** (China) — Powers China's 12,000+ km national QKD backbone across 80 cities
-
-### Tier 2 — Growing Commercial Players
-
-- **LuxQuanta** (Spain) — CV-QKD systems using standard telecom components (NOVA LQ platform)
-- **Q*Bird** (Netherlands) — MDI-QKD solutions (Falqon Series), first cross-border MDI-QKD in Europe
-- **QuintessenceLabs** (Australia) — QKD + QRNG + key management platform, Lockheed Martin strategic investment
-
-### Research & Integration Anchors
-
-- **IBM** — Foundational BB84 research heritage, PQC leadership (CRYSTALS-Kyber/Dilithium), Qiskit quantum simulation framework
-- **Lockheed Martin** — Defense systems integration, QuintessenceLabs partnership
-
-## Document Structure
-
-```
-qkd-avantheir/
-├── README.md                          # This file
-├── quiz.html                          # Interactive vocab flash cards & quiz (open in browser)
-├── 01-qkd-foundations/                # QKD protocols, hardware, architectures, global deployments
-├── 02-tls-integration/                # TLS 1.3/mTLS integration patterns (PSK + hybrid)
-├── 03-ipsec-ikev2-integration/        # IPsec VPN integration via RFC 8784
-├── 04-service-mesh-auth/              # Service-to-service symmetric rekeying
-├── 05-key-management/                 # ETSI API, key lifecycle, trusted nodes, hybrid models
-├── 06-vendor-analysis/                # Vendor profiles (Toshiba, IDQ/IonQ, QuantumCTek, LuxQuanta, Q*Bird, QLabs, IBM, LM)
-├── 07-operational-constraints/        # Distance, infrastructure, cost, failure modes, certification gaps
-├── 08-references/                     # Full reference list with links
-└── implementation/
-    ├── README.md                      # Setup and quick-start guide
-    ├── bb84_simulator.py              # BB84 protocol on IBM Qiskit Aer (quantum circuits, depolarizing noise, dual-backend)
-    ├── kme_server.py                  # ETSI GS QKD 014 REST API backed by BB84 simulator
-    ├── tls_psk_demo.py                # End-to-end PSK demo: Alice & Bob exchange a message using QKD-derived key
-    └── ikev2_ppk_config.md            # strongSwan IKEv2 PPK configuration guide (RFC 8784)
-```
-
-## Running the Implementation
+## Quick Start
 
 ```bash
-pip install flask requests cryptography qiskit qiskit-aer
+cd implementation
+pip install -r requirements.txt
 
 # Terminal 1 — KME server
-python implementation/kme_server.py
+python kme_server.py
 
-# Terminal 2 — Bob (responder)
-python implementation/tls_psk_demo.py server
+# Terminal 2 — FastAPI pipeline (port 8000)
+uvicorn api:app --reload --port 8000
 
-# Terminal 3 — Alice (initiator)
-python implementation/tls_psk_demo.py client
+# Terminal 3 — Frontend (port 3000)
+cd ../frontend && npm install && npm run dev
 ```
 
-See [implementation/README.md](implementation/README.md) for full details.
+See [implementation/README.md](implementation/README.md) for full setup details.
 
-## Vocabulary Flash Cards
+## ML Pipeline
 
-An interactive study tool is included at [`quiz.html`](quiz.html). Open it directly in any browser — no server or build step required.
+Five models form a closed-loop adaptive security layer:
 
-```bash
-open quiz.html        # macOS
-xdg-open quiz.html    # Linux
-```
+- **Eavesdrop detection** — RandomForest on 8-feature BB84 signal vector
+- **Attack classification** — GradientBoosting, 5 classes (intercept-resend, beam-splitting, PNS, Trojan horse, clean)
+- **QBER forecasting** — ARIMA time-series prediction
+- **Parameter tuning** — GB Regressor for optimal BB84 config
+- **KME anomaly detection** — Isolation Forest on traffic patterns
 
-Features:
-- **Flash Cards** — flip to reveal definitions, mark cards as known/unknown
-- **Quiz Mode** — multiple-choice questions drawn from the vocab set
-- Tracks progress across the session so you can focus on terms you haven't mastered yet
+## Adversarial Agents
+![Adversarial Agents UML Diagram](DOCS/images/adversarial-agents-uml.png)
 
-The content is sourced from [DOCS/vocab-study-guide.md](DOCS/vocab-study-guide.md).
+DEAP evolutionary gym co-evolves attack strategies against defender models. Perturbations are bounded by QKD physics constraints (covariance enforcement, per-feature bounds). Phylogeny tree tracks attack lineage across generations.
 
-## Key Contacts
+## Vocab Quiz
 
-Senior-led MSCS research track — treat as deliverable for execution.
+Open [`quiz.html`](quiz.html) in a browser — no build step needed. Flash cards and multiple-choice drawn from 245 QKD terms.
+
+

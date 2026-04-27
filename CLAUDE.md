@@ -23,7 +23,7 @@ qkd-avantheir/
 │   ├── capstone-brief.md       # Concise project brief for submission
 │   ├── system-architecture-diagram.md  # Mermaid diagrams: pipeline, relay, hybrid, ML layer, FastAPI
 │   ├── vocab-study-guide.md    # QKD terminology reference (245 entries)
-│   └── images/qkd-image.jpeg   # Architecture diagram
+│   └── images/qkd-image.png    # QKD UML + sequence diagram
 ├── implementation/
 │   ├── bb84_simulator.py       # BB84 on IBM Qiskit Aer: quantum circuits, depolarizing noise, dual-backend
 │   ├── kme_server.py           # Flask ETSI GS QKD 014 REST API with thread-safe key pool
