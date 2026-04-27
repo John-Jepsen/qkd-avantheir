@@ -27,7 +27,7 @@ Usage:
                              error_variance=0.012, max_burst=3)
 """
 
-import pickle
+import joblib
 import numpy as np
 from dataclasses import dataclass
 from sklearn.ensemble import RandomForestClassifier
@@ -35,6 +35,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
 from bb84_simulator import BB84Protocol
+from features import extract_features, FEATURE_NAMES
 
 
 @dataclass
@@ -45,8 +46,6 @@ class DetectionResult:
     threshold_would_detect: bool  # Whether the 11% QBER threshold would catch it
 
 
-# ── Feature labels ────────────────────────────────────────────────────────────
-FEATURE_NAMES = ["qber", "sift_ratio", "error_variance", "max_burst_length"]
 LABELS = ["clean", "eavesdrop", "partial_intercept"]
 
 
@@ -148,12 +147,18 @@ class EavesdropClassifier:
         return self
 
     def predict(self, qber: float, sift_ratio: float,
-                error_variance: float, max_burst: int) -> DetectionResult:
-        """Classify a single BB84 run."""
+                error_variance: float, max_burst: int,
+                low_block_fraction: float = 0.0,
+                high_block_fraction: float = 0.0,
+                error_autocorrelation: float = 0.0,
+                sift_deviation: float = 0.0) -> DetectionResult:
+        """Classify a single BB84 run using 8 features."""
         if not self.is_trained:
             raise RuntimeError("Model not trained — call train() first")
 
-        X = np.array([[qber, sift_ratio, error_variance, max_burst]])
+        X = np.array([[qber, sift_ratio, error_variance, max_burst,
+                        low_block_fraction, high_block_fraction,
+                        error_autocorrelation, sift_deviation]])
         proba = self.model.predict_proba(X)[0]
         classes = list(self.model.classes_)
         pred_idx = np.argmax(proba)
@@ -167,37 +172,31 @@ class EavesdropClassifier:
 
     def predict_from_result(self, result) -> DetectionResult:
         """Classify directly from a BB84Result object."""
+        feats = extract_features(result)
         return self.predict(
-            qber=result.qber,
-            sift_ratio=result.sift_ratio,
-            error_variance=result.error_variance,
-            max_burst=result.max_burst_length,
+            qber=feats[0], sift_ratio=feats[1],
+            error_variance=feats[2], max_burst=int(feats[3]),
+            low_block_fraction=feats[4], high_block_fraction=feats[5],
+            error_autocorrelation=feats[6], sift_deviation=feats[7],
         )
 
     def save(self, path: str = "eavesdrop_model.pkl"):
         """Serialize the trained model to disk."""
-        with open(path, "wb") as f:
-            pickle.dump(self.model, f)
+        joblib.dump(self.model, path)
         print(f"Model saved to {path}")
 
     @classmethod
     def load(cls, path: str = "eavesdrop_model.pkl") -> "EavesdropClassifier":
         """Load a previously trained model."""
         obj = cls()
-        with open(path, "rb") as f:
-            obj.model = pickle.load(f)
+        obj.model = joblib.load(path)
         obj.is_trained = True
         return obj
 
     @staticmethod
     def _extract(result) -> list[float]:
-        """Extract ML features from a BB84Result."""
-        return [
-            result.qber,
-            result.sift_ratio,
-            result.error_variance,
-            float(result.max_burst_length),
-        ]
+        """Extract ML features from a BB84Result (8-feature vector)."""
+        return extract_features(result)
 
 
 # ── Demo ──────────────────────────────────────────────────────────────────────

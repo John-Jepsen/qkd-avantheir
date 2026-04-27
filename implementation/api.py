@@ -11,6 +11,11 @@ Endpoints:
   POST /forecast         QBER forecast for next N rounds
   POST /recommend        Optimal BB84 params for a given noise level
   POST /detect-anomaly   Classify a KME traffic window
+  POST /adversarial-eval Run adversarial evaluation (evasion + hardening)
+  POST /evolution/start  Start evolutionary gym (runs async, streams via WS)
+  GET  /evolution/status Current evolution state
+  GET  /attack-tree      Phylogeny tree from last evolution run
+  WS   /ws/evolution     WebSocket for live evolution updates
   GET  /health           Pipeline status (loaded models, data stats)
   GET  /models           Details on each loaded model
 
@@ -29,12 +34,15 @@ Usage:
 import csv
 import os
 import time
+import asyncio
 import logging
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # ── Local imports ────────────────────────────────────────────────────────────
@@ -184,6 +192,13 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -458,3 +473,195 @@ def model_details():
         }
 
     return {"models": details, "total": len(details)}
+
+
+# ── Adversarial endpoints ──────────────────────────────────────────────────
+
+evolution_state: dict = {"status": "idle", "result": None, "generations": []}
+evolution_ws_clients: list[WebSocket] = []
+
+
+class AdversarialEvalRequest(BaseModel):
+    epsilon: float = Field(0.15, ge=0.01, le=0.5, description="Perturbation strength")
+    n_trials: int = Field(5, ge=1, le=20, description="Perturbation trials per sample")
+
+
+class EvolutionStartRequest(BaseModel):
+    population_size: int = Field(30, ge=10, le=200)
+    n_generations: int = Field(10, ge=1, le=200)
+    epsilon: float = Field(0.15, ge=0.01, le=0.5)
+    hardening_mix: float = Field(0.3, ge=0.0, le=0.8)
+
+
+@app.post("/adversarial-eval", summary="Adversarial evaluation",
+          description="Measure evasion rates before and after hardening")
+def adversarial_eval(req: AdversarialEvalRequest):
+
+    from adversarial_eval import evaluate_evasion, generate_perturbations, adversarial_retrain
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score
+
+    # Need training data — generate small set with classical backend
+    from ml_eavesdrop_classifier import EavesdropClassifier
+    import ml_eavesdrop_classifier
+    from bb84_simulator import BB84Protocol
+
+    orig = ml_eavesdrop_classifier.BB84Protocol
+    class FastProto:
+        def __init__(self, **kw):
+            kw["backend"] = "classical"
+            self._p = BB84Protocol(**kw)
+        def run(self, **kw):
+            return self._p.run(**kw)
+
+    ml_eavesdrop_classifier.BB84Protocol = FastProto
+    temp_clf = EavesdropClassifier()
+    temp_clf.generate_dataset(n_samples=300, n_bits=1024)
+    temp_clf.train()
+    ml_eavesdrop_classifier.BB84Protocol = orig
+
+    X_test, y_test = temp_clf.X_test, temp_clf.y_test
+    X_train, y_train = temp_clf.X_train, temp_clf.y_train
+
+    # Before
+    before = evaluate_evasion(temp_clf.model, X_test, y_test, epsilon=req.epsilon,
+                              n_trials=req.n_trials)
+    baseline_acc = accuracy_score(y_test, temp_clf.model.predict(X_test))
+
+    # Harden
+    X_adv = generate_perturbations(X_train, epsilon=req.epsilon)
+    y_adv = temp_clf.model.predict(X_train)
+    hardened = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
+    hardened.fit(X_train, y_train)
+    adversarial_retrain(hardened, X_train, y_train, X_adv, y_adv)
+
+    # After
+    after = evaluate_evasion(hardened, X_test, y_test, epsilon=req.epsilon,
+                             n_trials=req.n_trials)
+    hardened_acc = accuracy_score(y_test, hardened.predict(X_test))
+
+    return {
+        "epsilon": req.epsilon,
+        "before": {
+            "evasion_rate": round(before["evasion_rate"], 4),
+            "accuracy": round(baseline_acc, 4),
+        },
+        "after": {
+            "evasion_rate": round(after["evasion_rate"], 4),
+            "accuracy": round(hardened_acc, 4),
+        },
+        "improvement": round(float(before["evasion_rate"] - after["evasion_rate"]), 4),
+        "hardening_effective": bool(after["evasion_rate"] < before["evasion_rate"]),
+    }
+
+
+def _run_evolution_background(req: EvolutionStartRequest):
+    """Run evolution in a background thread and broadcast via WebSocket."""
+    global evolution_state
+
+    from adversarial_gym import AdversarialGym
+    from ml_eavesdrop_classifier import EavesdropClassifier
+    from bb84_simulator import BB84Protocol
+    import ml_eavesdrop_classifier
+
+    evolution_state = {"status": "training", "result": None, "generations": []}
+
+    # Train classifier
+    orig = ml_eavesdrop_classifier.BB84Protocol
+    class FastProto:
+        def __init__(self, **kw):
+            kw["backend"] = "classical"
+            self._p = BB84Protocol(**kw)
+        def run(self, **kw):
+            return self._p.run(**kw)
+
+    ml_eavesdrop_classifier.BB84Protocol = FastProto
+    clf = EavesdropClassifier()
+    clf.generate_dataset(n_samples=600, n_bits=1024)
+    clf.train()
+    ml_eavesdrop_classifier.BB84Protocol = orig
+
+    evolution_state["status"] = "evolving"
+
+    def on_gen(gen_result):
+        gen_data = {
+            "generation": gen_result.generation,
+            "best_fitness": round(gen_result.best_fitness, 4),
+            "avg_fitness": round(gen_result.avg_fitness, 4),
+            "evasion_rate": round(gen_result.evasion_rate, 4),
+            "defender_accuracy": round(gen_result.defender_accuracy, 4),
+        }
+        evolution_state["generations"].append(gen_data)
+        # Broadcast to WebSocket clients
+        for ws in list(evolution_ws_clients):
+            try:
+                asyncio.run(ws.send_json({"type": "generation", "data": gen_data}))
+            except Exception:
+                evolution_ws_clients.remove(ws)
+
+    gym = AdversarialGym(
+        population_size=req.population_size,
+        n_generations=req.n_generations,
+        epsilon=req.epsilon,
+        hardening_mix=req.hardening_mix,
+        on_generation=on_gen,
+    )
+
+    result = gym.evolve(clf.X_train, clf.y_train, clf.X_test, clf.y_test, clf.model)
+
+    evolution_state["status"] = "complete"
+    evolution_state["result"] = {
+        "initial_evasion_rate": round(result.initial_evasion_rate, 4),
+        "final_evasion_rate": round(result.final_evasion_rate, 4),
+        "final_defender_accuracy": round(result.final_defender_accuracy, 4),
+        "total_elapsed_s": round(result.total_elapsed_s, 1),
+        "phylogeny": result.phylogeny.to_dict(),
+    }
+
+    # Broadcast completion
+    for ws in list(evolution_ws_clients):
+        try:
+            asyncio.run(ws.send_json({"type": "complete", "data": evolution_state["result"]}))
+        except Exception:
+            evolution_ws_clients.remove(ws)
+
+
+@app.post("/evolution/start", summary="Start evolutionary gym",
+          description="Launch evolution in background. Monitor via /ws/evolution or /evolution/status")
+def start_evolution(req: EvolutionStartRequest):
+    if evolution_state.get("status") == "evolving":
+        raise HTTPException(409, "Evolution already running")
+
+    thread = threading.Thread(target=_run_evolution_background, args=(req,), daemon=True)
+    thread.start()
+
+    return {"status": "started", "config": req.model_dump()}
+
+
+@app.get("/evolution/status", summary="Evolution status")
+def get_evolution_status():
+    return {
+        "status": evolution_state.get("status", "idle"),
+        "generations_completed": len(evolution_state.get("generations", [])),
+        "generations": evolution_state.get("generations", []),
+        "result": evolution_state.get("result"),
+    }
+
+
+@app.get("/attack-tree", summary="Attack phylogeny tree")
+def get_attack_tree():
+    result = evolution_state.get("result")
+    if result is None or "phylogeny" not in result:
+        raise HTTPException(404, "No evolution has been run yet")
+    return result["phylogeny"]
+
+
+@app.websocket("/ws/evolution")
+async def websocket_evolution(ws: WebSocket):
+    await ws.accept()
+    evolution_ws_clients.append(ws)
+    try:
+        while True:
+            await ws.receive_text()  # keep alive
+    except WebSocketDisconnect:
+        evolution_ws_clients.remove(ws)

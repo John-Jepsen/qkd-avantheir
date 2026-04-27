@@ -1,0 +1,254 @@
+/* QKD Adversarial Benchmark — GitHub Dark Theme */
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --blue: #58a6ff;
+  --red: #f85149;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --purple: #a371f7;
+  --orange: #f0883e;
+  --spacing: 8px;
+  --font-data: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-ui: 'Inter', -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app {
+  min-height: 100vh;
+  padding: var(--spacing);
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(var(--spacing) * 2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: calc(var(--spacing) * 2);
+}
+
+.app-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-ui);
+}
+
+.ws-indicator {
+  font-family: var(--font-data);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.ws-indicator.connected {
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.ws-indicator.disconnected {
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: calc(var(--spacing) * 2);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 2);
+}
+
+.side-column {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 2);
+}
+
+/* Panel base */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: calc(var(--spacing) * 2);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: calc(var(--spacing) * 2);
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.panel-export {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--font-data);
+}
+
+.panel-export:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* Empty states */
+.empty-state {
+  text-align: center;
+  padding: calc(var(--spacing) * 4);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* Data values */
+.data-value {
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--blue);
+  color: var(--bg);
+  border: none;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  font-family: var(--font-ui);
+}
+
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Form controls */
+.control-group {
+  margin-bottom: calc(var(--spacing) * 2);
+}
+
+.control-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.control-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+.control-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+/* Confidence bars */
+.confidence-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.confidence-bar-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  width: 100px;
+  text-align: right;
+}
+
+.confidence-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.confidence-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.confidence-bar-value {
+  font-family: var(--font-data);
+  font-size: 12px;
+  width: 40px;
+  color: var(--text-secondary);
+}
+
+/* Status items */
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-item:last-child { border-bottom: none; }
+
+.status-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.status-value {
+  font-family: var(--font-data);
+  font-size: 13px;
+}
+
+/* Chart container */
+.chart-container {
+  width: 100%;
+  height: 250px;
+}
+
+.tree-container {
+  width: 100%;
+  height: 350px;
+  overflow: hidden;
+}

@@ -24,7 +24,7 @@ Usage:
     result = clf.classify_from_bb84(bb84_result)
 """
 
-import pickle
+import joblib
 import numpy as np
 from dataclasses import dataclass
 from sklearn.ensemble import GradientBoostingClassifier
@@ -32,6 +32,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
 from bb84_simulator import BB84Protocol
+from features import extract_features as _extract_features, FEATURE_NAMES
 
 
 @dataclass
@@ -48,17 +49,6 @@ ATTACK_TYPES = [
     "beam_splitting",
     "pns_attack",
     "trojan_horse",
-]
-
-FEATURE_NAMES = [
-    "qber",
-    "sift_ratio",
-    "error_variance",
-    "max_burst_length",
-    "low_block_fraction",   # Fraction of blocks with 0 errors
-    "high_block_fraction",  # Fraction of blocks with >50% errors
-    "error_autocorrelation",  # Correlation between consecutive block errors
-    "sift_deviation",       # How far sift_ratio deviates from expected 0.5
 ]
 
 # ── Attack simulation ─────────────────────────────────────────────────────────
@@ -178,42 +168,6 @@ def simulate_trojan_horse(n_bits: int = 4096, base_noise: float = 0.01,
 
     features = _extract_features(result)
     return {"features": features, "result": result}
-
-
-def _extract_features(result) -> list[float]:
-    """Extract the full feature vector from a BB84Result."""
-    block_rates = result.block_error_rates or []
-
-    # Basic features
-    qber = result.qber
-    sift_ratio = result.sift_ratio
-    error_variance = result.error_variance
-    max_burst = float(result.max_burst_length)
-
-    # Block distribution features
-    if block_rates:
-        low_frac = sum(1 for r in block_rates if r == 0.0) / len(block_rates)
-        high_frac = sum(1 for r in block_rates if r > 0.5) / len(block_rates)
-
-        # Error autocorrelation (correlation of consecutive block error rates)
-        if len(block_rates) > 2:
-            br = np.array(block_rates)
-            if br.std() > 1e-10:
-                corr_val = np.corrcoef(br[:-1], br[1:])[0, 1]
-                autocorr = float(corr_val) if np.isfinite(corr_val) else 0.0
-            else:
-                autocorr = 0.0
-        else:
-            autocorr = 0.0
-    else:
-        low_frac = 1.0
-        high_frac = 0.0
-        autocorr = 0.0
-
-    sift_deviation = abs(sift_ratio - 0.5)
-
-    return [qber, sift_ratio, error_variance, max_burst,
-            low_frac, high_frac, autocorr, sift_deviation]
 
 
 # ── Classifier ────────────────────────────────────────────────────────────────
@@ -337,15 +291,13 @@ class AttackClassifier:
         return self.classify(_extract_features(result))
 
     def save(self, path: str = "attack_model.pkl"):
-        with open(path, "wb") as f:
-            pickle.dump(self.model, f)
+        joblib.dump(self.model, path)
         print(f"Model saved to {path}")
 
     @classmethod
     def load(cls, path: str = "attack_model.pkl") -> "AttackClassifier":
         obj = cls()
-        with open(path, "rb") as f:
-            obj.model = pickle.load(f)
+        obj.model = joblib.load(path)
         obj.is_trained = True
         return obj
 
