@@ -7,8 +7,8 @@ import Controls from './components/Controls'
 import StatusPanel from './components/StatusPanel'
 import './App.css'
 
-const API_BASE = 'http://127.0.0.1:8000'
-const WS_URL = 'ws://127.0.0.1:8000/ws/evolution'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000/ws/evolution'
 
 function App() {
   const [status, setStatus] = useState('idle')
