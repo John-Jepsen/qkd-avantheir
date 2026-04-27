@@ -39,9 +39,15 @@ qkd-avantheir/
 │   ├── ml_noise_predictor.py       # ARIMA QBER time-series forecasting
 │   ├── ml_parameter_tuner.py       # GB Regressor for optimal BB84 parameter selection
 │   ├── ml_kme_anomaly.py           # Isolation Forest KME traffic anomaly detection
+│   ├── features.py             # Shared 8-feature extraction (single source of truth)
+│   ├── physics_constraints.py  # QKD physics bounds + covariance enforcement
+│   ├── adversarial_eval.py     # Bounded perturbation evasion testing + hardening
+│   ├── adversarial_gym.py      # DEAP evolutionary gym: co-evolutionary attacker/defender
 │   ├── train_all_models.py     # One-shot training script for all ML models
 │   ├── visualize_bb84.py       # BB84 visualization (circuit, QBER, noise sweep, key yield)
 │   └── README.md               # Quick-start with three-terminal setup
+├── frontend/                   # React + D3 adversarial benchmark dashboard (port 3000)
+│   └── src/components/         # EvolutionChart, PhylogenyTree, Controls, etc.
 └── research-outputs /          # Note: trailing space in directory name
     ├── qkd_signal_research_agent_prompt.md
     └── qkd_signal_research_complete.md
@@ -57,6 +63,7 @@ Each numbered directory (01–06) also contains a `phase*.md` supporting researc
 - **Strategic framing**: QKD vs PQC is not either/or — the docs map where each is appropriate. Hybrid QKD+PQC is the recommended architecture for highest-assurance deployments.
 - **Implementation stack**: Python 3.10+, IBM Qiskit 2.x / Qiskit Aer 0.17.x (quantum circuit simulator), Flask, FastAPI/Uvicorn, scikit-learn, statsmodels (ARIMA), `cryptography` library, `requests`. QBER abort threshold: >11%.
 - **ML security layer**: Five ML models form a closed-loop adaptive pipeline — eavesdrop detection (RandomForest), attack classification (GradientBoosting, 5 classes), QBER forecasting (ARIMA), parameter tuning (GB Regressor), and KME traffic anomaly detection (Isolation Forest). The FastAPI service (`api.py`) unifies all models behind REST endpoints.
+- **Adversarial agents**: DEAP evolutionary gym co-evolves attack strategies (bounded by QKD physics constraints) against defender models that harden via adversarial retraining each generation. Phylogeny tree tracks lineage. React dashboard streams evolution via WebSocket.
 
 ## Writing Conventions
 
