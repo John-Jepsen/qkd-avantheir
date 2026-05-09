@@ -1,9 +1,14 @@
 """
 Shared feature extraction for QKD ML models.
 
-All classifiers (eavesdrop, attack, adversarial) use the same 8-feature
+All classifiers (eavesdrop, attack, adversarial) use the same 12-feature
 vector extracted from BB84Result objects. Single source of truth prevents
 drift between models and simplifies the adversarial perturbation surface.
+
+Features 0-7 are directly measured; features 8-11 are physics-derived
+quantities that encode nonlinear relationships between observables. These
+derived features are hard to fake independently because they are constrained
+by quantum channel physics.
 
 Features:
   0. qber              — Estimated quantum bit error rate
@@ -14,9 +19,14 @@ Features:
   5. high_block_fraction — Fraction of blocks with >50% errors
   6. error_autocorrelation — Correlation between consecutive block errors
   7. sift_deviation    — |sift_ratio - 0.5|
+  8. variance_ratio    — error_variance / (qber*(1-qber)), normalized variance
+  9. block_entropy     — Shannon entropy of block error rate distribution
+ 10. burst_qber_product — max_burst_length * qber, burst-error coupling
+ 11. block_kurtosis    — Excess kurtosis of block error rates
 """
 
 import numpy as np
+from scipy.stats import entropy as shannon_entropy, kurtosis
 
 
 FEATURE_NAMES = [
@@ -28,11 +38,15 @@ FEATURE_NAMES = [
     "high_block_fraction",
     "error_autocorrelation",
     "sift_deviation",
+    "variance_ratio",
+    "block_entropy",
+    "burst_qber_product",
+    "block_kurtosis",
 ]
 
 
 def extract_features(result) -> list[float]:
-    """Extract the 8-feature vector from a BB84Result."""
+    """Extract the 12-feature vector from a BB84Result."""
     block_rates = result.block_error_rates or []
 
     qber = result.qber
@@ -60,5 +74,40 @@ def extract_features(result) -> list[float]:
 
     sift_deviation = abs(sift_ratio - 0.5)
 
+    # ── Physics-derived features ───────────────────────────────────────────
+    # Variance ratio: how close observed variance is to theoretical max.
+    # Clean channels have characteristic ratios; faked low-QBER with unusual
+    # variance gets exposed because this ratio is constrained by binomial stats.
+    max_var = qber * (1 - qber)
+    variance_ratio = error_variance / max_var if max_var > 1e-10 else 0.0
+
+    # Block entropy: Shannon entropy of binned block error rates.
+    # Natural noise → unimodal → higher entropy.
+    # Eavesdropper intercept-resend → bimodal → lower entropy.
+    if len(block_rates) > 2:
+        br = np.array(block_rates)
+        hist, _ = np.histogram(br, bins=10, range=(0.0, 0.5), density=False)
+        hist = hist + 1e-10  # avoid log(0)
+        block_ent = float(shannon_entropy(hist))
+    else:
+        block_ent = 0.0
+
+    # Burst-QBER product: nonlinear coupling between burst length and error
+    # rate. In real physics these are correlated — an attacker can't set them
+    # independently without violating the joint distribution.
+    burst_qber_prod = max_burst * qber
+
+    # Block kurtosis: excess kurtosis of block error rate distribution.
+    # Gaussian noise → ~0. Eavesdropper bimodal → negative kurtosis.
+    # Heavy-tailed partial intercept → positive kurtosis.
+    if len(block_rates) > 3:
+        br = np.array(block_rates)
+        block_kurt = float(kurtosis(br, fisher=True))
+        if not np.isfinite(block_kurt):
+            block_kurt = 0.0
+    else:
+        block_kurt = 0.0
+
     return [qber, sift_ratio, error_variance, max_burst,
-            low_frac, high_frac, autocorr, sift_deviation]
+            low_frac, high_frac, autocorr, sift_deviation,
+            variance_ratio, block_ent, burst_qber_prod, block_kurt]

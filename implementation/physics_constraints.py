@@ -26,6 +26,10 @@ FEATURE_BOUNDS = {
     "high_block_fraction":   (0.0,   1.0),    # fraction of blocks with >50% errors
     "error_autocorrelation": (-1.0,  1.0),    # correlation coefficient
     "sift_deviation":        (0.0,   0.40),   # |sift_ratio - 0.5|
+    "variance_ratio":        (0.0,   1.0),    # error_var / (qber*(1-qber)), bounded by binomial
+    "block_entropy":         (0.0,   3.0),    # Shannon entropy of binned block errors (~ln(10))
+    "burst_qber_product":    (0.0,   10.0),   # max_burst * qber
+    "block_kurtosis":        (-3.0,  10.0),   # excess kurtosis (bimodal → neg, heavy-tail → pos)
 }
 
 # Bounds as numpy arrays for fast vectorized operations
@@ -147,6 +151,14 @@ def enforce_covariance(features: np.ndarray) -> np.ndarray:
         # Low QBER shouldn't have many high-error blocks
         if qber < 0.05:
             result[i, 5] = min(result[i, 5], qber * 3)
+
+        # ── Derived features are NOT auto-computed ──────────────────────────
+        # The attacker must evolve variance_ratio, block_entropy,
+        # burst_qber_product, and block_kurtosis independently. If it gets
+        # them wrong, the inconsistency between the derived value and the
+        # true relationship (e.g., variance_ratio != error_variance/(qber*(1-qber)))
+        # becomes a signal the defender can learn to detect.
+        # Only apply basic bound clamping — no relationship enforcement.
 
     if squeeze:
         result = result.squeeze(0)

@@ -151,14 +151,20 @@ class EavesdropClassifier:
                 low_block_fraction: float = 0.0,
                 high_block_fraction: float = 0.0,
                 error_autocorrelation: float = 0.0,
-                sift_deviation: float = 0.0) -> DetectionResult:
-        """Classify a single BB84 run using 8 features."""
+                sift_deviation: float = 0.0,
+                variance_ratio: float = 0.0,
+                block_entropy: float = 0.0,
+                burst_qber_product: float = 0.0,
+                block_kurtosis: float = 0.0) -> DetectionResult:
+        """Classify a single BB84 run using 12 features."""
         if not self.is_trained:
             raise RuntimeError("Model not trained — call train() first")
 
         X = np.array([[qber, sift_ratio, error_variance, max_burst,
                         low_block_fraction, high_block_fraction,
-                        error_autocorrelation, sift_deviation]])
+                        error_autocorrelation, sift_deviation,
+                        variance_ratio, block_entropy,
+                        burst_qber_product, block_kurtosis]])
         proba = self.model.predict_proba(X)[0]
         classes = list(self.model.classes_)
         pred_idx = np.argmax(proba)
@@ -178,6 +184,8 @@ class EavesdropClassifier:
             error_variance=feats[2], max_burst=int(feats[3]),
             low_block_fraction=feats[4], high_block_fraction=feats[5],
             error_autocorrelation=feats[6], sift_deviation=feats[7],
+            variance_ratio=feats[8], block_entropy=feats[9],
+            burst_qber_product=feats[10], block_kurtosis=feats[11],
         )
 
     def save(self, path: str = "eavesdrop_model.pkl"):
