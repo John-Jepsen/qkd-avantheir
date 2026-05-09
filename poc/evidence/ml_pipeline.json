@@ -1,0 +1,48 @@
+{
+  "clean_run": {
+    "qber": 0.0048,
+    "eavesdrop_classifier": {
+      "label": "clean",
+      "confidence": 1.0,
+      "probabilities": {
+        "clean": 1.0,
+        "eavesdrop": 0.0,
+        "partial_intercept": 0.0
+      }
+    },
+    "attack_classifier": {
+      "label": "clean",
+      "confidence": 0.9808,
+      "probabilities": {
+        "beam_splitting": 0.0192,
+        "clean": 0.9808,
+        "intercept_resend": 0.0,
+        "pns_attack": 0.0,
+        "trojan_horse": 0.0
+      }
+    }
+  },
+  "eavesdropper_run": {
+    "qber": 0.201,
+    "eavesdrop_classifier": {
+      "label": "eavesdrop",
+      "confidence": 1.0,
+      "probabilities": {
+        "clean": 0.0,
+        "eavesdrop": 1.0,
+        "partial_intercept": 0.0
+      }
+    },
+    "attack_classifier": {
+      "label": "intercept_resend",
+      "confidence": 1.0,
+      "probabilities": {
+        "beam_splitting": 0.0,
+        "clean": 0.0,
+        "intercept_resend": 1.0,
+        "pns_attack": 0.0,
+        "trojan_horse": 0.0
+      }
+    }
+  }
+}

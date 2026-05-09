@@ -1,0 +1,9 @@
+18:57:05  INFO     Loading pipeline models...
+18:57:05  INFO     Loaded eavesdrop classifier from /app/implementation/data/eavesdrop_model.pkl
+18:57:05  INFO     Loaded attack classifier from /app/implementation/data/attack_model.pkl
+18:57:05  INFO     Loaded parameter tuner from /app/implementation/data/param_tuner_model.pkl
+ARIMA(2, 1, 2) fitted — AIC=-16549.0, BIC=-16519.9
+18:57:05  INFO     Trained noise predictor on 2500 data points
+18:57:05  INFO     Trained KME anomaly detector on 4904 normal windows
+18:57:05  INFO     Pipeline ready: 5/5 models loaded in 0.4s
+18:57:06  INFO     Shutting down pipeline

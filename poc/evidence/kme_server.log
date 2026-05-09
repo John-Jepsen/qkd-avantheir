@@ -1,0 +1,29 @@
+18:56:26  INFO     Initialising key pool (target: 50 keys)...
+18:56:40  INFO     Key pool ready: 50 keys available
+18:56:40  INFO     Initialising key pool (target: 50 keys)...
+18:56:55  INFO     Key pool ready: 50 keys available
+ETSI GS QKD 014 KME Server (BB84 simulator)
+=======================================================
+  KME ID : kme-sim-01
+  Source : BB84 simulator
+  API    : http://127.0.0.1:5000/api/v1/keys/
+
+  Example requests:
+    curl http://127.0.0.1:5000/api/v1/keys/sae-bob/status
+    curl http://127.0.0.1:5000/api/v1/keys/sae-bob/enc_keys
+
+ * Serving Flask app 'kme_server'
+ * Debug mode: off
+18:56:55  INFO     [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+18:56:55  INFO     [33mPress CTRL+C to quit[0m
+18:56:55  INFO     127.0.0.1 - - [09/May/2026 18:56:55] "GET /api/v1/keys/sae-bob/status HTTP/1.1" 200 -
+18:56:55  INFO     127.0.0.1 - - [09/May/2026 18:56:55] "GET /api/v1/keys/sae-bob/status HTTP/1.1" 200 -
+18:56:55  INFO     enc_keys  slave=sae-bob  n=1  size=256
+18:56:55  INFO     127.0.0.1 - - [09/May/2026 18:56:55] "GET /api/v1/keys/sae-bob/enc_keys HTTP/1.1" 200 -
+18:56:55  INFO     dec_keys  slave=sae-bob  requested=1  found=1
+18:56:55  INFO     127.0.0.1 - - [09/May/2026 18:56:55] "POST /api/v1/keys/sae-bob/dec_keys HTTP/1.1" 200 -
+18:56:57  INFO     enc_keys  slave=sae-bob  n=1  size=256
+18:56:57  INFO     127.0.0.1 - - [09/May/2026 18:56:57] "GET /api/v1/keys/sae-bob/enc_keys?number=1&size=256 HTTP/1.1" 200 -
+18:56:57  INFO     dec_keys  slave=sae-bob  requested=1  found=1
+18:56:57  INFO     127.0.0.1 - - [09/May/2026 18:56:57] "POST /api/v1/keys/sae-bob/dec_keys HTTP/1.1" 200 -

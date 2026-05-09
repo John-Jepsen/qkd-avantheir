@@ -1,0 +1,9 @@
+[Bob/Server] Waiting for Alice on 127.0.0.1:8443
+[Bob/Server] Connection from ('127.0.0.1', 50544)
+[Bob/Server] Received key_ID : 36492a9d-d742-4fc7-9229-7a4eff68ecc2
+[Bob/Server] Retrieved key   : 92ae592b6e8b7ab8a60174decc9962d9...  (256 bits)
+[Bob/Server] Key matches Alice's? — will verify via authenticated decryption
+[Bob/Server] Decrypted message: "Hello from Alice. This message is secured with a QKD-derived key."
+[Bob/Server] AES-GCM authentication tag verified — key agreement confirmed
+[Bob/Server] Sent encrypted reply
+[Bob/Server] Session complete.

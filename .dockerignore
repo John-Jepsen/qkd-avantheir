@@ -8,3 +8,5 @@ planning-DOCS/
 research-outputs /
 DOCS/
 0*-*/
+# POC evidence is regenerated each run; don't bake stale copies into images
+poc/evidence/

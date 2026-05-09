@@ -1,0 +1,10 @@
+{
+  "raw_bits": 4096,
+  "sifted_bits": 2038,
+  "qber": 0.2857,
+  "secure": false,
+  "eavesdropper_detected": true,
+  "key_length_bits": 0,
+  "final_key_hex_prefix": null,
+  "backend_used": "classical"
+}

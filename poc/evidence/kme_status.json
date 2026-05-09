@@ -1,0 +1,1 @@
+{"key_size":256,"master_SAE_ID":"sae-master","max_SAE_ID_count":0,"max_key_count":50,"max_key_per_request":20,"max_key_size":1024,"min_key_size":64,"slave_SAE_ID":"sae-bob","source_KME_ID":"kme-sim-01","stored_key_count":50,"target_KME_ID":"kme-sim-02"}

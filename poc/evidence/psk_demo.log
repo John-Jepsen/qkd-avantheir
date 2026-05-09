@@ -1,0 +1,15 @@
+[Alice/Client] Fetching key from KME...
+[Alice/Client] Got key_ID  : 36492a9d-d742-4fc7-9229-7a4eff68ecc2
+[Alice/Client] Got key     : 92ae592b6e8b7ab8a60174decc9962d9...  (256 bits)
+[Alice/Client] Connected to 127.0.0.1:8443
+[Alice/Client] Sent key_ID (PSK identity)
+[Alice/Client] Sent encrypted message
+[Alice/Client] Bob replied: "ACK from Bob. QKD-derived PSK established. No DH used."
+[Alice/Client] Session complete.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Summary: Both sides used the same key, fetched independently
+from the ETSI KME. No Diffie-Hellman or RSA was performed.
+In TLS 1.3, this key_ID/key pair maps directly into the
+pre_shared_key extension (RFC 8446 §4.2.11).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

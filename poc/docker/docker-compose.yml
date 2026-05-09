@@ -1,0 +1,88 @@
+# docker-compose for the POC.
+#
+# Run options:
+#
+#   docker compose -f poc/docker/docker-compose.yml run --rm mvp
+#       → Builds the image (first time), runs the full MVP demo, exits.
+#
+#   docker compose -f poc/docker/docker-compose.yml up kme api
+#       → Stands up the KME on :5000 and the FastAPI service on :8765
+#         as long-running services. Curl them from the host or other
+#         containers.
+#
+#   docker compose -f poc/docker/docker-compose.yml run --rm psk-client
+#       → After `up kme api`, runs the Alice PSK client against the
+#         in-network KME and exits.
+#
+# All services share the same image — `mvp_image` is built once and reused.
+
+x-image: &image
+  build:
+    context: ../..        # repo root, so the Dockerfile can see implementation/
+    dockerfile: poc/docker/Dockerfile
+  image: qkd-poc:latest
+
+services:
+  # One-shot: runs the full MVP demo (8 exit criteria) and exits.
+  mvp:
+    <<: *image
+    container_name: qkd-poc-mvp
+    command: ["mvp"]
+    # Mount evidence/ so captured outputs land on the host filesystem too.
+    volumes:
+      - ../evidence:/app/poc/evidence
+
+  # Long-running ETSI GS QKD 014 KME server.
+  kme:
+    <<: *image
+    container_name: qkd-poc-kme
+    command: ["kme"]
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:5000/api/v1/keys/sae-bob/status"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s   # KME pre-fills 50 keys via BB84
+      retries: 5
+
+  # Long-running FastAPI ML pipeline.
+  api:
+    <<: *image
+    container_name: qkd-poc-api
+    command: ["api"]
+    ports:
+      - "8765:8765"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8765/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  # Bob — listens for Alice's PSK-encrypted message.
+  psk-server:
+    <<: *image
+    container_name: qkd-poc-psk-server
+    command: ["psk-server"]
+    ports:
+      - "8443:8443"
+    depends_on:
+      kme:
+        condition: service_healthy
+    environment:
+      KME_URL: http://kme:5000
+
+  # Alice — fetches a key from the KME and sends one PSK-encrypted message
+  # to the psk-server. Exits 0 on success.
+  psk-client:
+    <<: *image
+    container_name: qkd-poc-psk-client
+    command: ["psk-client"]
+    depends_on:
+      kme:
+        condition: service_healthy
+      psk-server:
+        condition: service_started
+    environment:
+      KME_URL: http://kme:5000
