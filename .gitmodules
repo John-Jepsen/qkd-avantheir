@@ -1,0 +1,3 @@
+[submodule "qkdsec"]
+	path = qkdsec
+	url = git@github.com:John-Jepsen/qkdsec.git
