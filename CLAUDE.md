@@ -48,12 +48,24 @@ qkd-avantheir/
 │   └── README.md               # Quick-start with three-terminal setup
 ├── frontend/                   # React + D3 adversarial benchmark dashboard (port 3000)
 │   └── src/components/         # EvolutionChart, PhylogenyTree, Controls, etc.
+├── qkdsec/                     # Git submodule → github.com/John-Jepsen/qkdsec
+│                               # Published pip package: ETSI 014 client + doctor probe,
+│                               # numerical key-rate proofs, BB84 simulator
 └── research-outputs /          # Note: trailing space in directory name
     ├── qkd_signal_research_agent_prompt.md
     └── qkd_signal_research_complete.md
 ```
 
 Each numbered directory (01–06) also contains a `phase*.md` supporting research file alongside the main document. Directories 07 and 08 have no phase file.
+
+## Submodules
+
+- **`qkdsec/`** → [`John-Jepsen/qkdsec`](https://github.com/John-Jepsen/qkdsec).
+  Canonical home of the pip-installable `qkdsec` package. After cloning the
+  monorepo, run `git submodule update --init qkdsec`. To work on the package,
+  `cd qkdsec`, branch and push from there — the monorepo only tracks the
+  pinned SHA. To pick up upstream changes: `git submodule update --remote qkdsec`,
+  then commit the new pointer in the monorepo.
 
 ## Key Technical Context
 
