@@ -151,54 +151,37 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
         .attr('stroke', '#ffffff').attr('stroke-width', 0.5).attr('opacity', 0.06)
     }
 
-    // Zone labels
-    g.append('text')
-      .attr('x', 16).attr('y', 24)
-      .attr('fill', '#f85149').attr('font-size', 13).attr('font-weight', 700)
-      .attr('opacity', 0.95)
-      .text('🤖 ATTACKER WINS ZONE')
-    g.append('text')
-      .attr('x', 16).attr('y', innerH - 14)
-      .attr('fill', '#58a6ff').attr('font-size', 13).attr('font-weight', 700)
-      .attr('opacity', 0.95)
-      .text('🛡️ DEFENDER WINS ZONE')
+    // Zone labels — small pill-style badges in the corners so they never
+    // collide with the defender line or its glow.
+    const labelPad = 10
+    const attackerBadge = g.append('g').attr('transform', `translate(${innerW - 200}, 8)`)
+    attackerBadge.append('rect').attr('width', 190).attr('height', 24).attr('rx', 12)
+      .attr('fill', '#3a0a14').attr('stroke', '#f85149').attr('stroke-width', 1).attr('opacity', 0.85)
+    attackerBadge.append('text').attr('x', 95).attr('y', 16).attr('text-anchor', 'middle')
+      .attr('fill', '#f85149').attr('font-size', 11).attr('font-weight', 700)
+      .text('↑ ATTACKER WINS ZONE')
 
-    // Mid-line guide: shows what y = 50% looks like
-    g.append('line')
-      .attr('x1', 0).attr('x2', innerW)
-      .attr('y1', innerH / 2).attr('y2', innerH / 2)
-      .attr('stroke', '#ffffff').attr('stroke-dasharray', '3,4')
-      .attr('opacity', 0.07)
+    const defenderBadge = g.append('g').attr('transform', `translate(${innerW - 200}, ${innerH - 32})`)
+    defenderBadge.append('rect').attr('width', 190).attr('height', 24).attr('rx', 12)
+      .attr('fill', '#0a2236').attr('stroke', '#58a6ff').attr('stroke-width', 1).attr('opacity', 0.85)
+    defenderBadge.append('text').attr('x', 95).attr('y', 16).attr('text-anchor', 'middle')
+      .attr('fill', '#58a6ff').attr('font-size', 11).attr('font-weight', 700)
+      .text('↓ DEFENDER WINS ZONE')
 
     // ---- Defender layer ----
     const defLayer = g.append('g').attr('class', 'defender-layer')
 
-    // Energy field — a tall band centered on the defender line. Will be
-    // sized/positioned in the data effect.
-    defLayer.append('rect').attr('class', 'def-field')
-      .attr('width', innerW).attr('x', 0)
-      .attr('fill', 'url(#field-grad)').attr('opacity', 0.7)
-
-    // Glow line behind sharp line
+    // Glow line behind sharp line — single bright stroke, no wide band.
     defLayer.append('line').attr('class', 'def-line-halo')
       .attr('x1', 0).attr('x2', innerW)
-      .attr('stroke', '#58a6ff').attr('stroke-width', 16).attr('opacity', 0.25)
+      .attr('stroke', '#58a6ff').attr('stroke-width', 14).attr('opacity', 0.3)
       .attr('stroke-linecap', 'round')
 
     defLayer.append('line').attr('class', 'def-line')
       .attr('x1', 0).attr('x2', innerW)
-      .attr('stroke', '#58a6ff').attr('stroke-width', 5)
+      .attr('stroke', '#58a6ff').attr('stroke-width', 4)
       .attr('stroke-linecap', 'round')
       .style('filter', 'url(#line-glow)')
-
-    // Tick marks along the line so it reads as a barrier, not just a line
-    const tickGroup = defLayer.append('g').attr('class', 'def-ticks')
-    for (let i = 0; i < 24; i++) {
-      tickGroup.append('line')
-        .attr('x1', (i / 23) * innerW).attr('x2', (i / 23) * innerW)
-        .attr('y1', -4).attr('y2', 4)
-        .attr('stroke', '#58a6ff').attr('stroke-width', 1.5).attr('opacity', 0.6)
-    }
 
     // Big shield emoji at the right edge
     defLayer.append('text').attr('class', 'def-shield')
@@ -265,21 +248,19 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const { innerW, innerH } = dims
     const dur = TRANSITION_MS[speed] || TRANSITION_MS.normal
 
-    // Defender position
-    const defenderY = innerH * (1 - (latest.defender_accuracy || 0))
-    const fieldH = 60
-    defLayer.select('.def-field')
-      .transition().duration(dur).ease(d3.easeCubicInOut)
-      .attr('y', defenderY - fieldH / 2).attr('height', fieldH)
+    // Defender position — clamped so the line never overlaps the corner
+    // zone badges at the very top/bottom of the arena.
+    const TOP_GUARD = 44
+    const BOTTOM_GUARD = 44
+    const rawDefenderY = innerH * (1 - (latest.defender_accuracy || 0))
+    const defenderY = Math.max(TOP_GUARD, Math.min(innerH - BOTTOM_GUARD, rawDefenderY))
+
     defLayer.select('.def-line')
       .transition().duration(dur).ease(d3.easeCubicInOut)
       .attr('y1', defenderY).attr('y2', defenderY)
     defLayer.select('.def-line-halo')
       .transition().duration(dur).ease(d3.easeCubicInOut)
       .attr('y1', defenderY).attr('y2', defenderY)
-    defLayer.select('.def-ticks').selectAll('line')
-      .transition().duration(dur).ease(d3.easeCubicInOut)
-      .attr('y1', defenderY - 4).attr('y2', defenderY + 4)
     defLayer.select('.def-shield')
       .transition().duration(dur).ease(d3.easeCubicInOut)
       .attr('x', innerW + 8).attr('y', defenderY + 10)
@@ -306,15 +287,9 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     if (isNewGen) {
       defLayer.select('.def-line-halo')
         .interrupt()
-        .attr('opacity', 0.95).attr('stroke-width', 36)
+        .attr('opacity', 0.95).attr('stroke-width', 32)
         .transition().duration(950).ease(d3.easeCubicOut)
-        .attr('opacity', 0.25).attr('stroke-width', 16)
-
-      defLayer.select('.def-field')
-        .interrupt()
-        .attr('opacity', 1)
-        .transition().duration(950).ease(d3.easeCubicOut)
-        .attr('opacity', 0.7)
+        .attr('opacity', 0.3).attr('stroke-width', 14)
 
       // Score-delta popup (e.g., "+4% caught this round")
       if (prevDefAccRef.current != null) {
