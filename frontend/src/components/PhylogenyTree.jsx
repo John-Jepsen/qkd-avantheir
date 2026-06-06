@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import * as d3 from 'd3'
 
 const ATTACK_COLORS = {
@@ -19,12 +19,14 @@ const ATTACK_SHAPES = {
   evolved: d3.symbolStar,
 }
 
-export default function PhylogenyTree({ phylogeny, status }) {
+export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = true }) {
   const svgRef = useRef()
   const tooltipRef = useRef()
+  const [open, setOpen] = useState(!collapsedByDefault)
 
   useEffect(() => {
     if (!phylogeny || !phylogeny.nodes.length) return
+    if (!open) return
 
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()
@@ -100,13 +102,23 @@ export default function PhylogenyTree({ phylogeny, status }) {
     // Initial zoom to fit
     svg.call(zoom.transform, d3.zoomIdentity.translate(0, 0).scale(0.9))
 
-  }, [phylogeny])
+  }, [phylogeny, open])
 
   return (
     <div className="panel" style={{ position: 'relative' }}>
       <div className="panel-header">
-        <span className="panel-title">Attack Phylogeny</span>
-        {phylogeny && (
+        <button
+          className="phylogeny-toggle"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+          type="button"
+        >
+          {open ? '▼' : '▶'} Attack family tree
+          <span className="phylogeny-hint">
+            {' '}— optional, for the nerds
+          </span>
+        </button>
+        {open && phylogeny && (
           <button className="panel-export" onClick={() => {
             const json = JSON.stringify(phylogeny, null, 2)
             const blob = new Blob([json], { type: 'application/json' })
@@ -116,18 +128,24 @@ export default function PhylogenyTree({ phylogeny, status }) {
           }}>Export JSON</button>
         )}
       </div>
-      {!phylogeny ? (
+      {!open ? null : !phylogeny ? (
         <div className="empty-state">Run an evolution to see attack lineage</div>
       ) : (
-        <div className="tree-container">
-          <svg ref={svgRef} width="100%" height="350" />
-          <div ref={tooltipRef} style={{
-            display: 'none', position: 'absolute', background: '#161b22',
-            border: '1px solid #30363d', borderRadius: 4, padding: '6px 10px',
-            fontSize: 12, fontFamily: 'var(--font-data)', color: '#e6edf3',
-            pointerEvents: 'none', zIndex: 10,
-          }} />
-        </div>
+        <>
+          <p className="phylogeny-lede">
+            Each dot is one attacker. Lines connect parents to children across
+            generations. Color = attack type; star = freshly evolved.
+          </p>
+          <div className="tree-container">
+            <svg ref={svgRef} width="100%" height="350" />
+            <div ref={tooltipRef} style={{
+              display: 'none', position: 'absolute', background: '#161b22',
+              border: '1px solid #30363d', borderRadius: 4, padding: '6px 10px',
+              fontSize: 12, fontFamily: 'var(--font-data)', color: '#e6edf3',
+              pointerEvents: 'none', zIndex: 10,
+            }} />
+          </div>
+        </>
       )}
     </div>
   )
