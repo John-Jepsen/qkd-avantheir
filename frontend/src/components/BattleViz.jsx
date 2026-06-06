@@ -49,27 +49,25 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
   const latest = generations[generations.length - 1]
 
-  // Stable attacker layout — fixed x lanes, persistent jitter phases, plus
-  // a small `streak` array so we can render fading position trails.
+  // Stable attacker layout — fixed x lanes, persistent jitter phases. Each
+  // dot is labeled "evaded" or "caught" so the layout effect can position
+  // it relative to the defender line: evaded → above, caught → below.
+  // This keeps the line and the dots telling the same story.
   const dots = useMemo(() => {
     const seed = generations.length === 0 ? 1 : (generations.length * 7919)
     const rand = seedRand(seed)
+    const evRate = latest?.evasion_rate || 0
+    const evadedCount = Math.round(evRate * ATTACKER_COUNT)
     return Array.from({ length: ATTACKER_COUNT }, (_, i) => {
-      const baseFit = latest
-        ? Math.max(
-            0.04,
-            Math.min(
-              0.98,
-              (latest.best_fitness || 0) * 0.35 +
-                (latest.avg_fitness || 0) * 0.65 +
-                (rand() - 0.5) * 0.22
-            )
-          )
-        : 0.05
+      const evaded = i < evadedCount
+      // Where in its zone the dot sits — random spread per dot, capped so
+      // dots cluster near the line not at the extremes.
+      const zoneFrac = 0.15 + rand() * 0.75
       return {
         id: i,
         x: (i + 1) / (ATTACKER_COUNT + 1),
-        y: baseFit,
+        evaded,
+        zoneFrac,
         phase: rand() * Math.PI * 2,
         speed: 0.4 + rand() * 0.6,
         amp: 0.012 + rand() * 0.022,
@@ -337,12 +335,32 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
     attackerSel.exit().remove()
 
+    // Position each dot above or below the defender line based on whether
+    // it evaded or got caught. Bright red = evaded; muted orange = caught.
+    // Pack dots in tight bands hugging the line on either side so the line
+    // is always at the visual center of the action — the area beyond the
+    // bands is the defender's secured zone (no action happens there).
+    const DOT_R = 7
+    const BAND_ABOVE = 90    // px above line where evaded dots float
+    const BAND_BELOW = 140   // px below line where caught dots stack
+    const targetY = (d) => {
+      const gap = 14
+      if (d.evaded) {
+        const top = Math.max(8, defenderY - gap - BAND_ABOVE)
+        const bot = defenderY - gap
+        return top + (bot - top) * d.zoneFrac
+      }
+      const top = defenderY + gap
+      const bot = Math.min(innerH - 8, defenderY + gap + BAND_BELOW)
+      return top + (bot - top) * d.zoneFrac
+    }
+
     const entered = attackerSel.enter().append('circle')
       .attr('class', 'attacker')
       .attr('cx', d => d.x * innerW)
       .attr('cy', innerH + 14)
       .attr('r', 0)
-      .attr('fill', '#f85149')
+      .attr('fill', d => d.evaded ? '#f85149' : '#f0883e')
       .attr('opacity', 0)
       .attr('stroke', '#3a0a14').attr('stroke-width', 1.2)
 
@@ -350,21 +368,22 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       .delay((_, i) => (i * dur) / ATTACKER_COUNT * 0.55)
       .duration(dur * 0.9).ease(d3.easeCubicOut)
       .attr('opacity', 0.95).attr('r', DOT_R)
-      .attr('cy', d => (1 - d.y) * innerH)
+      .attr('cy', d => targetY(d))
 
     attackerSel
       .attr('opacity', 0.95)
+      .attr('fill', d => d.evaded ? '#f85149' : '#f0883e')
       .transition().duration(dur).ease(d3.easeCubicInOut)
       .attr('r', DOT_R)
-      .attr('cy', d => (1 - d.y) * innerH)
+      .attr('cy', d => targetY(d))
 
-    // Crossing flash particles for dots above the defender line
+    // Crossing flash particles for dots that evaded (sit above the line)
     if (isNewGen) {
       const flashLayer = g.select('.flashes')
       flashLayer.selectAll('*').remove()
-      dots.forEach((d, i) => {
-        const y = (1 - d.y) * innerH
-        if (y < defenderY) {
+      dots.forEach((d) => {
+        if (d.evaded) {
+          const y = targetY(d)
           // burst of 4 particles
           for (let k = 0; k < 4; k++) {
             const angle = (k / 4) * Math.PI * 2 + Math.random() * 0.4
@@ -394,8 +413,26 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const { g } = layersRef.current
     if (!g) return
     const { innerW, innerH } = dims
+    const TOP_GUARD = 44
+    const BOTTOM_GUARD = 44
+    const rawDefY = innerH * (1 - (latest.defender_accuracy || 0))
+    const defenderY = Math.max(TOP_GUARD, Math.min(innerH - BOTTOM_GUARD, rawDefY))
     const start = Date.now()
     let lastTrail = 0
+
+    const BAND_ABOVE = 90
+    const BAND_BELOW = 140
+    const targetY = (d) => {
+      const gap = 14
+      if (d.evaded) {
+        const top = Math.max(8, defenderY - gap - BAND_ABOVE)
+        const bot = defenderY - gap
+        return top + (bot - top) * d.zoneFrac
+      }
+      const top = defenderY + gap
+      const bot = Math.min(innerH - 8, defenderY + gap + BAND_BELOW)
+      return top + (bot - top) * d.zoneFrac
+    }
 
     const t = d3.timer(() => {
       const tMs = Date.now() - start
@@ -403,7 +440,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
       g.select('.attackers').selectAll('circle.attacker')
         .each(function (d) {
-          const baseY = (1 - d.y) * innerH
+          const baseY = targetY(d)
           const dy = Math.sin(tSec * d.speed + d.phase) * (innerH * d.amp)
           const dx = Math.cos(tSec * (d.speed * 0.6) + d.phase) * (innerW * 0.006)
           d3.select(this)
