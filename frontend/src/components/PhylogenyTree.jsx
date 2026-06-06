@@ -1,28 +1,22 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useMemo } from 'react'
 import * as d3 from 'd3'
+import { nodeQber, attackerCounts } from '../sample-data'
 
-const ATTACK_COLORS = {
-  intercept_resend: '#f85149',
-  beam_splitting: '#d29922',
-  pns_attack: '#a371f7',
-  trojan_horse: '#f0883e',
-  clean: '#3fb950',
-  evolved: '#58a6ff',
-}
-
-const ATTACK_SHAPES = {
-  intercept_resend: d3.symbolCircle,
-  beam_splitting: d3.symbolDiamond,
-  pns_attack: d3.symbolTriangle,
-  trojan_horse: d3.symbolSquare,
-  clean: d3.symbolCircle,
-  evolved: d3.symbolStar,
-}
+// Visual mapping:
+//   x = generation, y = vertical fan inside the generation column
+//   Color: red if this attacker's QBER ≥ 11% (the static rule would have
+//          caught it), blue if QBER < 11% (the static rule misses; only
+//          the ML defender can spot it).
+//   Size: scales with fitness — bigger = sneakier (higher attacker fitness).
+// This makes the "static rule vs ML defender" story visible in the tree
+// itself: the more blue dots high in fitness, the more our ML defender
+// is doing that the textbook rule can't.
 
 export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = true }) {
   const svgRef = useRef()
   const tooltipRef = useRef()
   const [open, setOpen] = useState(!collapsedByDefault)
+  const counts = useMemo(() => attackerCounts(phylogeny), [phylogeny])
 
   useEffect(() => {
     if (!phylogeny || !phylogeny.nodes.length) return
@@ -33,10 +27,8 @@ export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = 
 
     const width = svgRef.current.clientWidth
     const height = 330
-
     const g = svg.append('g')
 
-    // Zoom
     const zoom = d3.zoom()
       .scaleExtent([0.3, 3])
       .on('zoom', (e) => g.attr('transform', e.transform))
@@ -44,8 +36,6 @@ export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = 
 
     const nodes = phylogeny.nodes
     const maxGen = d3.max(nodes, d => d.generation) || 1
-
-    // Layout: x = generation, y = spread within generation
     const genGroups = d3.group(nodes, d => d.generation)
 
     nodes.forEach(node => {
@@ -58,7 +48,7 @@ export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = 
 
     const nodeMap = new Map(nodes.map(n => [n.id, n]))
 
-    // Edges
+    // Edges (parent → child)
     g.selectAll('line.edge')
       .data(nodes.filter(n => n.parent_id != null))
       .join('line')
@@ -70,36 +60,50 @@ export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = 
       .attr('stroke', '#30363d')
       .attr('stroke-width', 1)
 
-    // Nodes
-    const symbol = d3.symbol().size(80)
+    // Nodes — circle (uniform shape), colored by QBER vs 11% threshold,
+    // sized by fitness.
+    const fitnesses = nodes.map(n => n.fitness || 0)
+    const rScale = d3.scaleLinear()
+      .domain([d3.min(fitnesses) || 0, d3.max(fitnesses) || 1])
+      .range([4, 9])
 
-    g.selectAll('path.node')
+    g.selectAll('circle.node')
       .data(nodes)
-      .join('path')
+      .join('circle')
       .attr('class', 'node')
-      .attr('d', d => symbol.type(ATTACK_SHAPES[d.attack_type] || d3.symbolStar)())
-      .attr('transform', d => `translate(${d.x},${d.y})`)
-      .attr('fill', d => ATTACK_COLORS[d.attack_type] || '#58a6ff')
+      .attr('cx', d => d.x).attr('cy', d => d.y)
+      .attr('r', d => rScale(d.fitness || 0))
+      .attr('fill', d => {
+        const q = nodeQber(d)
+        if (q == null) return '#8b949e'         // unknown — grey
+        return q >= 0.11 ? '#f85149' : '#58a6ff' // red: rule catches, blue: rule misses
+      })
       .attr('stroke', '#0d1117')
-      .attr('stroke-width', 1)
+      .attr('stroke-width', 1.2)
+      .attr('opacity', 0.92)
       .attr('cursor', 'pointer')
       .on('mouseover', (e, d) => {
+        const q = nodeQber(d)
+        const verdict = q == null
+          ? 'unknown QBER'
+          : (q >= 0.11
+              ? 'static 11% rule would catch this'
+              : 'static rule misses this — only ML can spot it')
         const tip = d3.select(tooltipRef.current)
         tip.style('display', 'block')
           .style('left', `${e.offsetX + 10}px`)
           .style('top', `${e.offsetY - 10}px`)
           .html(`
-            <strong>Gen ${d.generation}</strong><br/>
-            Type: ${d.attack_type}<br/>
-            Fitness: ${d.fitness.toFixed(3)}<br/>
-            QBER: ${d.features?.qber?.toFixed(4) || '?'}
+            <strong>Gen ${d.generation}, attacker ${d.id}</strong><br/>
+            Fitness: ${(d.fitness || 0).toFixed(3)}<br/>
+            QBER: ${q != null ? (q * 100).toFixed(1) + '%' : '?'}<br/>
+            <em>${verdict}</em>
           `)
       })
       .on('mouseout', () => {
         d3.select(tooltipRef.current).style('display', 'none')
       })
 
-    // Initial zoom to fit
     svg.call(zoom.transform, d3.zoomIdentity.translate(0, 0).scale(0.9))
 
   }, [phylogeny, open])
@@ -133,9 +137,26 @@ export default function PhylogenyTree({ phylogeny, status, collapsedByDefault = 
       ) : (
         <>
           <p className="phylogeny-lede">
-            Each dot is one attacker. Lines connect parents to children across
-            generations. Color = attack type; star = freshly evolved.
+            Each dot is one attacker the evolutionary gym produced. Lines connect
+            parents to children across generations. <span className="phy-legend-dot phy-red" /> <strong>Red</strong> = QBER ≥ 11% (the static rule catches this).
+            <span className="phy-legend-dot phy-blue" /> <strong>Blue</strong> = QBER &lt; 11% (the static rule misses; only ML catches it).
+            Bigger circle = higher fitness, i.e. a sneakier attacker.
+            Drag to pan, scroll to zoom; hover a node for details.
           </p>
+          {counts.total > 0 && counts.aboveThreshold === 0 && (
+            <div className="phylogeny-note">
+              All blue — the gym evolved {counts.total} attackers that stayed
+              under 11% QBER. That's the whole point: these are the attacks
+              the static rule can't see, and our ML defender has to.
+            </div>
+          )}
+          {counts.total > 0 && counts.belowThreshold === 0 && (
+            <div className="phylogeny-note">
+              All red — every attacker pushed QBER above 11%, so the textbook
+              rule would catch all of them. The ML defender's lift here is small;
+              try a higher epsilon to evolve subtler attacks.
+            </div>
+          )}
           <div className="tree-container">
             <svg ref={svgRef} width="100%" height="350" />
             <div ref={tooltipRef} style={{

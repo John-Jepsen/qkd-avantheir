@@ -1143,7 +1143,110 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 10px;
+  line-height: 1.6;
 }
+
+.phy-legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin: 0 4px 0 8px;
+  vertical-align: middle;
+}
+
+.phy-red { background: #f85149; }
+.phy-blue { background: #58a6ff; }
+
+.phylogeny-note {
+  padding: 10px 12px;
+  background: rgba(88,166,255,0.08);
+  border-left: 3px solid var(--blue);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.qber-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.qber-readout-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qber-readout-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.qber-readout-value {
+  font-family: var(--font-data);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.qber-high { color: var(--red); }
+.qber-low { color: var(--green); }
+
+.qber-readout-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.qber-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qber-count::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.qber-count-above::before { background: var(--red); }
+.qber-count-below::before { background: var(--blue); }
+
+.comparison-callout {
+  padding: 12px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.comparison-callout-strong {
+  background: rgba(88, 166, 255, 0.08);
+  border-color: rgba(88, 166, 255, 0.4);
+  color: var(--text-primary);
+}
+
+.comparison-callout-strong strong { color: var(--blue); }
 
 /* --- Guided tour ------------------------------------------------------ */
 

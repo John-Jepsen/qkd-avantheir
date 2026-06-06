@@ -15,35 +15,57 @@ export const SAMPLE_GENERATIONS = [
   { evasion_rate: 0.06, defender_accuracy: 0.96, best_fitness: 0.14, avg_fitness: 0.10 },
 ]
 
-const ATTACK_TYPES = ['intercept_resend', 'beam_splitting', 'pns_attack', 'trojan_horse']
+// Real backend stores `features` as a 12-element list with qber at index 0
+// and sets attack_type to "evolved" for every gym-spawned individual. We
+// mirror that shape exactly so the dashboard renders sample and real runs
+// identically.
+function makeFeatureVec(qber) {
+  return [
+    qber,        // 0: qber
+    0.5,         // 1: sift_ratio
+    0.001,       // 2: error_variance
+    3,           // 3: max_burst
+    0,           // 4: error_autocorrelation
+    -1,          // 5: low_block_fraction
+    0,           // 6: high_block_fraction
+    1.0,         // 7: variance_ratio
+    0.5,         // 8: block_entropy
+    qber * 3,    // 9: burst_qber_product
+    0,           // 10
+    0,           // 11
+  ]
+}
 
 function buildSamplePhylogeny() {
   const nodes = []
   let id = 0
-  // Generation 0: seed population, no parent
   for (let i = 0; i < 6; i++) {
+    const qber = 0.14 + Math.random() * 0.06   // above the 11% rule
     nodes.push({
       id: id++,
       parent_id: null,
       generation: 0,
-      attack_type: ATTACK_TYPES[i % ATTACK_TYPES.length],
+      attack_type: 'evolved',
       fitness: 0.2 + Math.random() * 0.25,
-      features: { qber: 0.12 + Math.random() * 0.05 },
+      features: makeFeatureVec(qber),
     })
   }
-  // Generations 1-9: each has 4-6 children, parents drawn from previous gen
   for (let g = 1; g < 10; g++) {
     const prevGen = nodes.filter(n => n.generation === g - 1)
     const childCount = 4 + Math.floor(Math.random() * 3)
     for (let c = 0; c < childCount; c++) {
       const parent = prevGen[Math.floor(Math.random() * prevGen.length)]
+      // Later generations are more subtle — their QBER drifts down toward
+      // and past the 11% threshold so the visual reads "static rule misses
+      // these but ML catches them"
+      const qber = Math.max(0.04, 0.16 - g * 0.012 + (Math.random() - 0.5) * 0.04)
       nodes.push({
         id: id++,
         parent_id: parent.id,
         generation: g,
-        attack_type: Math.random() < 0.4 ? 'evolved' : parent.attack_type,
+        attack_type: 'evolved',
         fitness: Math.max(0.05, parent.fitness - 0.02 - Math.random() * 0.03),
-        features: { qber: 0.11 + Math.random() * 0.06 },
+        features: makeFeatureVec(qber),
       })
     }
   }
@@ -51,6 +73,61 @@ function buildSamplePhylogeny() {
 }
 
 export const SAMPLE_PHYLOGENY = buildSamplePhylogeny()
+
+// Extract QBER from a phylogeny node regardless of features shape.
+// Backend → list with qber at index 0. Older code → dict with .qber.
+export function nodeQber(node) {
+  const f = node?.features
+  if (f == null) return null
+  if (Array.isArray(f)) return f[0]
+  if (typeof f === 'object') return f.qber ?? null
+  return null
+}
+
+// Static 11% rule: catch rate = fraction of attackers whose QBER ≥ 0.11.
+// If the phylogeny has no usable QBER values, fall back to the supplied
+// default so the card still renders.
+export function staticRuleCatchRate(phylogeny, fallback = 0.62) {
+  if (!phylogeny?.nodes?.length) return fallback
+  let caught = 0
+  let total = 0
+  for (const n of phylogeny.nodes) {
+    const q = nodeQber(n)
+    if (q == null) continue
+    total += 1
+    if (q >= 0.11) caught += 1
+  }
+  if (!total) return fallback
+  return caught / total
+}
+
+export function averageQber(phylogeny) {
+  if (!phylogeny?.nodes?.length) return null
+  let sum = 0
+  let count = 0
+  for (const n of phylogeny.nodes) {
+    const q = nodeQber(n)
+    if (q == null) continue
+    sum += q
+    count += 1
+  }
+  return count ? sum / count : null
+}
+
+export function attackerCounts(phylogeny) {
+  if (!phylogeny?.nodes?.length) return { aboveThreshold: 0, belowThreshold: 0, total: 0 }
+  let above = 0
+  let below = 0
+  let total = 0
+  for (const n of phylogeny.nodes) {
+    const q = nodeQber(n)
+    if (q == null) continue
+    total += 1
+    if (q >= 0.11) above += 1
+    else below += 1
+  }
+  return { aboveThreshold: above, belowThreshold: below, total }
+}
 
 export const SAMPLE_RESULT = {
   initial_evasion_rate: 0.52,
