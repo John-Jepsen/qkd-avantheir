@@ -18,25 +18,85 @@ ML-augmented Quantum Key Distribution for enterprise security. Replaces classica
 | `08-references/` | Full reference list |
 | `implementation/` | BB84 simulator, KME server, ML pipeline, adversarial gym |
 | `frontend/` | React + D3 adversarial benchmark dashboard |
+| `poc/` | One-command MVP bundle (Docker) — the reviewer entry point |
+| `qkdsec/` | Git submodule → [`John-Jepsen/qkdsec`](https://github.com/John-Jepsen/qkdsec) — published pip package |
 | `DOCS/` | Capstone outline, architecture diagrams, vocab guide |
 
 ## Quick Start
 
+### Clone
+
+You only need `git` and Docker. The repo uses one git submodule (`qkdsec/`),
+so clone with `--recurse-submodules`:
+
+```bash
+git clone --recurse-submodules https://github.com/John-Jepsen/qkd-avantheir.git
+cd qkd-avantheir
+```
+
+If you already cloned without that flag, recover with:
+
+```bash
+git submodule update --init --recursive
+```
+
+The `qkdsec/` submodule is **not** required for the Docker demo — only if
+you want to develop against the published pip package locally.
+
+### Run the full MVP demo (Docker — recommended)
+
+```bash
+docker build -f poc/docker/Dockerfile -t qkd-poc .
+docker run --rm qkd-poc
+```
+
+That builds a single image bundling BB84, the ETSI 014 KME, the FastAPI ML
+pipeline, and the TLS PSK demo, then runs the assertion script and prints
+`PASS` for all 8 MVP exit criteria. Wall-clock ≈ 1 minute on a modern laptop.
+
+For long-running services (e.g., to poke the FastAPI Swagger UI):
+
+```bash
+docker compose -f poc/docker/docker-compose.yml up kme api
+# KME      → http://localhost:5000
+# FastAPI  → http://localhost:8765/docs
+```
+
+Full detail (every run mode, healthchecks, troubleshooting):
+[`poc/docker/README.md`](poc/docker/README.md).
+
+### Two Dockerfiles — which is which?
+
+| Path | Purpose | Bundles |
+|------|---------|---------|
+| `poc/docker/Dockerfile` | **Reviewer entry point** — full MVP demo with assertion script | BB84 sim + KME + FastAPI + TLS PSK + `run_mvp.sh` |
+| `Dockerfile` (repo root) | Production Cloud Run image | FastAPI ML pipeline only |
+
+If you're evaluating the project, use the POC one. The root Dockerfile is
+deployed at [the Cloud Run URL](DOCS/system-architecture-diagram.md) and ships
+just the ML serving layer.
+
+### Develop locally without Docker
+
+Python 3.10+ on macOS or Linux. Single script handles venv, deps, model
+training, and runs the same MVP demo:
+
+```bash
+cd poc && ./scripts/run_mvp.sh
+```
+
+Or the original three-terminal flow:
+
 ```bash
 cd implementation
 pip install -r requirements.txt
-
-# Terminal 1 — KME server
-python kme_server.py
-
-# Terminal 2 — FastAPI pipeline (port 8000)
-uvicorn api:app --reload --port 8000
-
-# Terminal 3 — Frontend (port 3000)
-cd ../frontend && npm install && npm run dev
+python kme_server.py                                    # Terminal 1: KME
+uvicorn api:app --reload --port 8000                    # Terminal 2: FastAPI
+cd ../frontend && npm install && npm run dev            # Terminal 3: dashboard
 ```
 
-See [implementation/README.md](implementation/README.md) for full setup details.
+See [`implementation/README.md`](implementation/README.md) and
+[`poc/README.md`](poc/README.md) for details.
 
 ## ML Pipeline
 
