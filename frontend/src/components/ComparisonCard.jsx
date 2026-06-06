@@ -2,6 +2,22 @@ import { useState, useMemo } from 'react'
 import Tooltip from './Tooltip'
 import { staticRuleCatchRate, averageQber, attackerCounts } from '../sample-data'
 
+// Sourced from implementation/features.py FEATURE_NAMES.
+const ML_FEATURES = [
+  { name: 'QBER', plain: 'Quantum bit error rate — how often Alice and Bob disagree.' },
+  { name: 'Sift ratio', plain: 'Fraction of raw bits Alice and Bob kept after comparing bases.' },
+  { name: 'Error variance', plain: 'Variance of per-block error rates across the run.' },
+  { name: 'Max burst length', plain: 'Longest streak of consecutive errors.' },
+  { name: 'Low-block fraction', plain: 'Fraction of blocks with zero errors.' },
+  { name: 'High-block fraction', plain: 'Fraction of blocks with >50% errors.' },
+  { name: 'Error autocorrelation', plain: 'How errors in one block correlate with the next.' },
+  { name: 'Sift deviation', plain: '|sift ratio − 0.5| — how far the sift ratio strays from the BB84 ideal.' },
+  { name: 'Variance ratio', plain: 'Error variance normalized by what QBER alone would predict.' },
+  { name: 'Block entropy', plain: 'Shannon entropy of the block-error distribution.' },
+  { name: 'Burst × QBER product', plain: 'Max burst length × QBER — couples burst length with error rate.' },
+  { name: 'Block kurtosis', plain: 'How heavy-tailed the per-block error distribution is.' },
+]
+
 export default function ComparisonCard({ result }) {
   const [showMore, setShowMore] = useState(false)
 
@@ -75,10 +91,20 @@ export default function ComparisonCard({ result }) {
             <strong className="comparison-step-title">What we do</strong>
             <p>
               Our ML defender looks at <strong>twelve</strong> features of the
-              signal (QBER plus burst patterns, sift ratio, error
-              autocorrelation, block entropy, and more) and learns the patterns
-              that separate real attacks from real noise.
+              signal and learns the patterns that separate real attacks from
+              real noise. Here they all are:
             </p>
+            <ol className="ml-feature-list">
+              {ML_FEATURES.map((f, i) => (
+                <li key={f.name} className="ml-feature">
+                  <span className="ml-feature-num">{i + 1}</span>
+                  <div className="ml-feature-body">
+                    <strong className="ml-feature-name">{f.name}</strong>
+                    <span className="ml-feature-plain">{f.plain}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
         </div>
       </div>
