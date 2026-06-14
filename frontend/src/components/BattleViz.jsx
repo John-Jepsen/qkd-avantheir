@@ -310,7 +310,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     // better the defender, the higher (closer to the threshold) it holds the
     // line, leaving a wide "caught" zone beneath it.
     const bandBottom = innerH * THRESHOLD_FRAC
-    const lineTop = bandBottom + 24
+    const lineTop = bandBottom + (innerH - bandBottom) * 0.28 // keep the line off the band
     const lineBot = innerH - 28
     const acc = latest.defender_accuracy || 0
     const defenderY = lineBot - (lineBot - lineTop) * acc
@@ -426,7 +426,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const { innerW, innerH } = dims
 
     const bandBottom = innerH * THRESHOLD_FRAC
-    const lineTop = bandBottom + 24
+    const lineTop = bandBottom + (innerH - bandBottom) * 0.28 // keep the line off the band
     const lineBot = innerH - 28
     const acc = latest.defender_accuracy || 0
     const defenderY = lineBot - (lineBot - lineTop) * acc
