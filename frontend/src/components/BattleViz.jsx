@@ -352,93 +352,50 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       prevGenCountRef.current = generations.length
     }
 
-    // Attacker dots
+    // Attacker dots — the data join only manages existence and static style.
+    // All vertical motion (the per-generation assault on the line) is driven
+    // by the battle-timeline timer below, so we don't set cy here.
     const attackerSel = g.select('.attackers').selectAll('circle.attacker')
       .data(dots, d => d.id)
 
     attackerSel.exit().remove()
 
-    // Evaded dots float up INTO the fixed blue band ("got past"); caught dots
-    // spread across the secured zone below the moving green defender line.
-    const DOT_R = 7
-    const targetY = (d) => {
-      if (d.evaded) {
-        const top = 32          // clear of the band label
-        const bot = bandBottom - 8
-        return top + (bot - top) * d.zoneFrac
-      }
-      const top = defenderY + 14
-      const bot = innerH - 12
-      return top + (bot - top) * d.zoneFrac
-    }
-
-    const entered = attackerSel.enter().append('circle')
+    attackerSel.enter().append('circle')
       .attr('class', 'attacker')
       .attr('cx', d => d.x * innerW)
-      .attr('cy', innerH + 14)
-      .attr('r', 0)
-      .attr('fill', d => d.evaded ? '#f85149' : '#f0883e')
-      .attr('opacity', 0)
-      .attr('stroke', '#3a0a14').attr('stroke-width', 1.2)
-
-    entered.transition()
-      .delay((_, i) => (i * dur) / ATTACKER_COUNT * 0.55)
-      .duration(dur * 0.9).ease(d3.easeCubicOut)
-      .attr('opacity', 0.95).attr('r', DOT_R)
-      .attr('cy', d => targetY(d))
-
-    attackerSel
-      .attr('opacity', 0.95)
-      .attr('fill', d => d.evaded ? '#f85149' : '#f0883e')
-      .transition().duration(dur).ease(d3.easeCubicInOut)
+      .attr('cy', innerH - 14)
       .attr('r', DOT_R)
-      .attr('cy', d => targetY(d))
+      .attr('opacity', 0.95)
+      .attr('stroke', '#3a0a14').attr('stroke-width', 1.2)
+      .merge(attackerSel)
+      .attr('fill', d => d.evaded ? '#f85149' : '#f0883e')
 
-    // Crossing flash particles for dots that evaded (sit above the line)
-    if (isNewGen) {
-      const flashLayer = g.select('.flashes')
-      flashLayer.selectAll('*').remove()
-      dots.forEach((d) => {
-        if (d.evaded) {
-          const y = targetY(d)
-          // burst of 4 particles
-          for (let k = 0; k < 4; k++) {
-            const angle = (k / 4) * Math.PI * 2 + Math.random() * 0.4
-            flashLayer.append('circle')
-              .attr('cx', d.x * innerW).attr('cy', y).attr('r', 2)
-              .attr('fill', '#ffffff').attr('opacity', 1)
-              .transition().duration(900).ease(d3.easeCubicOut)
-              .attr('cx', d.x * innerW + Math.cos(angle) * 28)
-              .attr('cy', y + Math.sin(angle) * 28)
-              .attr('opacity', 0).remove()
-          }
-          // expanding ring
-          flashLayer.append('circle')
-            .attr('cx', d.x * innerW).attr('cy', y).attr('r', 4)
-            .attr('fill', 'none').attr('stroke', '#ffffff').attr('stroke-width', 2)
-            .attr('opacity', 0.9)
-            .transition().duration(800).ease(d3.easeCubicOut)
-            .attr('r', 28).attr('opacity', 0).remove()
-        }
-      })
-    }
+    // Clear the crossing-flash layer; the timer re-fires a flash as each
+    // attacker actually punches through the line this generation.
+    if (isNewGen) g.select('.flashes').selectAll('*').remove()
   }, [dims, dots, latest, generations.length, speed])
 
-  // Continuous per-frame jitter + trail painting.
+  // Battle-timeline timer: every generation replays the assault. Each attacker
+  // launches from the bottom, charges the threshold line, then resolves —
+  // evaded dots break UP through the line into the band; caught dots reach the
+  // line and get pushed back DOWN into the defender's zone. Settle-jitter and
+  // motion trails ride on top once a dot has resolved.
   useEffect(() => {
     if (!dims.innerW || !latest) return
     const { g } = layersRef.current
     if (!g) return
     const { innerW, innerH } = dims
+    const dur = TRANSITION_MS[speed] || TRANSITION_MS.normal
+
     const bandBottom = innerH * THRESHOLD_FRAC
     const lineTop = bandBottom + 24
     const lineBot = innerH - 28
     const acc = latest.defender_accuracy || 0
     const defenderY = lineBot - (lineBot - lineTop) * acc
-    const start = Date.now()
-    let lastTrail = 0
 
-    const targetY = (d) => {
+    // Final resting spot once the dot has resolved: in the band if it got past,
+    // spread through the defender's zone below the line if it got caught.
+    const restY = (d) => {
       if (d.evaded) {
         const top = 32
         const bot = bandBottom - 8
@@ -449,37 +406,97 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       return top + (bot - top) * d.zoneFrac
     }
 
+    const launchY = innerH - 14        // staging line at the bottom
+    const lineApproach = defenderY + 6 // pressed right up against the line
+    const chargeDur = dur              // wall time for one dot's full run
+    const staggerMs = (dur * 0.4) / ATTACKER_COUNT
+    const recoil = d3.easeBackOut.overshoot(2.6) // caught-dot pushback bounce
+
+    // Vertical position for local progress p (0..1), in three beats:
+    //   charge (0→0.40)  — rise from the bottom up to the line
+    //   press  (0.40→0.66) — strain against the line, quivering, the fight
+    //   resolve(0.66→1)  — evaded dots punch UP into the band; caught dots get
+    //                      shoved back DOWN past their rest spot, then settle
+    const dotY = (d, p) => {
+      if (p <= 0) return launchY
+      const rest = restY(d)
+      if (p < 0.40) {
+        return launchY + (lineApproach - launchY) * d3.easeCubicOut(p / 0.40)
+      }
+      if (p < 0.66) {
+        const q = (p - 0.40) / 0.26
+        const quiver = Math.sin(q * Math.PI * 3) * 3 // ±3px struggle at the line
+        return lineApproach + quiver
+      }
+      const q = (p - 0.66) / 0.34
+      if (d.evaded) {
+        return lineApproach + (rest - lineApproach) * d3.easeCubicOut(q)
+      }
+      return lineApproach + (rest - lineApproach) * recoil(q)
+    }
+
+    const flashed = new Set()
+    const spawnFlash = (x, y) => {
+      const flashLayer = g.select('.flashes')
+      for (let k = 0; k < 4; k++) {
+        const angle = (k / 4) * Math.PI * 2 + Math.random() * 0.4
+        flashLayer.append('circle')
+          .attr('cx', x).attr('cy', y).attr('r', 2)
+          .attr('fill', '#ffffff').attr('opacity', 1)
+          .transition().duration(900).ease(d3.easeCubicOut)
+          .attr('cx', x + Math.cos(angle) * 28)
+          .attr('cy', y + Math.sin(angle) * 28)
+          .attr('opacity', 0).remove()
+      }
+      flashLayer.append('circle')
+        .attr('cx', x).attr('cy', y).attr('r', 4)
+        .attr('fill', 'none').attr('stroke', '#ffffff').attr('stroke-width', 2)
+        .attr('opacity', 0.9)
+        .transition().duration(800).ease(d3.easeCubicOut)
+        .attr('r', 28).attr('opacity', 0).remove()
+    }
+
+    const start = Date.now()
+    let lastTrail = 0
+
     const t = d3.timer(() => {
       const tMs = Date.now() - start
       const tSec = tMs / 1000
 
       g.select('.attackers').selectAll('circle.attacker')
         .each(function (d) {
-          const baseY = targetY(d)
-          const dy = Math.sin(tSec * d.speed + d.phase) * (innerH * d.amp)
-          const dx = Math.cos(tSec * (d.speed * 0.6) + d.phase) * (innerW * 0.006)
-          d3.select(this)
-            .attr('cy', baseY + dy)
-            .attr('cx', d.x * innerW + dx)
+          const local = Math.max(0, Math.min(1, (tMs - d.id * staggerMs) / chargeDur))
+          let y = dotY(d, local)
+          // Settle wobble ramps in over the last 20% of the run.
+          const settle = Math.max(0, Math.min(1, (local - 0.8) / 0.2))
+          y += Math.sin(tSec * d.speed + d.phase) * (innerH * d.amp) * settle
+          const dx = Math.cos(tSec * (d.speed * 0.6) + d.phase) * (innerW * 0.006) * settle
+          d3.select(this).attr('cy', y).attr('cx', d.x * innerW + dx)
+
+          // Fire a crossing flash the moment an evaded dot punches the line.
+          if (d.evaded && local >= 0.70 && !flashed.has(d.id)) {
+            flashed.add(d.id)
+            spawnFlash(d.x * innerW, defenderY)
+          }
         })
 
-      // Drop a faint trail dot every 90ms per attacker — fades fast
+      // Faint motion trails behind moving dots; fade fast.
       if (tMs - lastTrail > 90) {
         lastTrail = tMs
         const trails = g.select('.trails')
-        g.select('.attackers').selectAll('circle.attacker').each(function () {
+        g.select('.attackers').selectAll('circle.attacker').each(function (d) {
           const cx = +d3.select(this).attr('cx')
           const cy = +d3.select(this).attr('cy')
           trails.append('circle')
             .attr('cx', cx).attr('cy', cy).attr('r', 3)
-            .attr('fill', '#f85149').attr('opacity', 0.35)
+            .attr('fill', d.evaded ? '#f85149' : '#f0883e').attr('opacity', 0.3)
             .transition().duration(700).ease(d3.easeCubicOut)
             .attr('r', 1).attr('opacity', 0).remove()
         })
       }
     })
     return () => t.stop()
-  }, [dims, latest, dots])
+  }, [dims, latest, dots, speed])
 
   const s = statusFor(latest)
 
