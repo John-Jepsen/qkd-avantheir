@@ -50,6 +50,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
   const prevGenCountRef = useRef(0)
   const prevDefAccRef = useRef(null)
   const prevEvRef = useRef(null)
+  const baseYRef = useRef({}) // persistent per-dot vertical position across gens
   const [dims, setDims] = useState({ innerW: 0, innerH: HEIGHT - MARGIN.top - MARGIN.bottom })
 
   const latest = generations[generations.length - 1]
@@ -63,8 +64,15 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const rand = seedRand(seed)
     const evRate = latest?.evasion_rate || 0
     const evadedCount = Math.round(evRate * ATTACKER_COUNT)
+    // Spread the evaded lanes evenly across the width (Bresenham-style pick) so
+    // breakthroughs sweep across the arena instead of bunching on the left, and
+    // tag each with its order so they can slip past the line one at a time.
+    let evadeOrder = 0
     return Array.from({ length: ATTACKER_COUNT }, (_, i) => {
-      const evaded = i < evadedCount
+      const evaded =
+        Math.floor((i * evadedCount) / ATTACKER_COUNT) !==
+        Math.floor(((i + 1) * evadedCount) / ATTACKER_COUNT)
+      const evadeIndex = evaded ? evadeOrder++ : -1
       // Where in its zone the dot sits — random spread per dot, capped so
       // dots cluster near the line not at the extremes.
       const zoneFrac = 0.15 + rand() * 0.75
@@ -72,6 +80,8 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
         id: i,
         x: (i + 1) / (ATTACKER_COUNT + 1),
         evaded,
+        evadeIndex,
+        evadedCount,
         zoneFrac,
         phase: rand() * Math.PI * 2,
         speed: 0.4 + rand() * 0.6,
@@ -256,6 +266,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
     layersRef.current = { g, defLayer, hud }
     prevGenCountRef.current = 0
+    baseYRef.current = {}
   }, [dims])
 
   // Update on new generation: animate dots, pulse defender, score popups.
@@ -375,17 +386,16 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     if (isNewGen) g.select('.flashes').selectAll('*').remove()
   }, [dims, dots, latest, generations.length, speed])
 
-  // Battle-timeline timer: every generation replays the assault. Each attacker
-  // launches from the bottom, charges the threshold line, then resolves —
-  // evaded dots break UP through the line into the band; caught dots reach the
-  // line and get pushed back DOWN into the defender's zone. Settle-jitter and
-  // motion trails ride on top once a dot has resolved.
+  // Continuous float: dots hold their positions across generations and only
+  // ease toward a new spot when their evaded/caught status changes — nobody
+  // re-lines-up each round. A gentle per-frame jitter keeps everyone drifting.
+  // An evaded dot that newly rises across the line emits a one-off slip-past
+  // flash, so breakthroughs still read one at a time.
   useEffect(() => {
     if (!dims.innerW || !latest) return
     const { g } = layersRef.current
     if (!g) return
     const { innerW, innerH } = dims
-    const dur = TRANSITION_MS[speed] || TRANSITION_MS.normal
 
     const bandBottom = innerH * THRESHOLD_FRAC
     const lineTop = bandBottom + 24
@@ -393,8 +403,8 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const acc = latest.defender_accuracy || 0
     const defenderY = lineBot - (lineBot - lineTop) * acc
 
-    // Final resting spot once the dot has resolved: in the band if it got past,
-    // spread through the defender's zone below the line if it got caught.
+    // Resting spot: in the band if it got past, spread through the defender's
+    // zone below the line if it got caught.
     const restY = (d) => {
       if (d.evaded) {
         const top = 32
@@ -406,36 +416,9 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       return top + (bot - top) * d.zoneFrac
     }
 
-    const launchY = innerH - 14        // staging line at the bottom
-    const lineApproach = defenderY + 6 // pressed right up against the line
-    const chargeDur = dur              // wall time for one dot's full run
-    const staggerMs = (dur * 0.4) / ATTACKER_COUNT
-    const recoil = d3.easeBackOut.overshoot(2.6) // caught-dot pushback bounce
+    const launchY = innerH - 14   // where unseen dots first appear (bottom)
+    const base = baseYRef.current
 
-    // Vertical position for local progress p (0..1), in three beats:
-    //   charge (0→0.40)  — rise from the bottom up to the line
-    //   press  (0.40→0.66) — strain against the line, quivering, the fight
-    //   resolve(0.66→1)  — evaded dots punch UP into the band; caught dots get
-    //                      shoved back DOWN past their rest spot, then settle
-    const dotY = (d, p) => {
-      if (p <= 0) return launchY
-      const rest = restY(d)
-      if (p < 0.40) {
-        return launchY + (lineApproach - launchY) * d3.easeCubicOut(p / 0.40)
-      }
-      if (p < 0.66) {
-        const q = (p - 0.40) / 0.26
-        const quiver = Math.sin(q * Math.PI * 3) * 3 // ±3px struggle at the line
-        return lineApproach + quiver
-      }
-      const q = (p - 0.66) / 0.34
-      if (d.evaded) {
-        return lineApproach + (rest - lineApproach) * d3.easeCubicOut(q)
-      }
-      return lineApproach + (rest - lineApproach) * recoil(q)
-    }
-
-    const flashed = new Set()
     const spawnFlash = (x, y) => {
       const flashLayer = g.select('.flashes')
       for (let k = 0; k < 4; k++) {
@@ -457,34 +440,40 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     }
 
     const start = Date.now()
+    let lastFrame = start
     let lastTrail = 0
 
     const t = d3.timer(() => {
-      const tMs = Date.now() - start
-      const tSec = tMs / 1000
+      const now = Date.now()
+      const dt = Math.min(0.05, (now - lastFrame) / 1000)
+      lastFrame = now
+      const tSec = (now - start) / 1000
+      const k = 1 - Math.exp(-dt * 3.5) // ease toward rest (~0.3s time constant)
 
       g.select('.attackers').selectAll('circle.attacker')
         .each(function (d) {
-          const local = Math.max(0, Math.min(1, (tMs - d.id * staggerMs) / chargeDur))
-          let y = dotY(d, local)
-          // Settle wobble ramps in over the last 20% of the run.
-          const settle = Math.max(0, Math.min(1, (local - 0.8) / 0.2))
-          y += Math.sin(tSec * d.speed + d.phase) * (innerH * d.amp) * settle
-          const dx = Math.cos(tSec * (d.speed * 0.6) + d.phase) * (innerW * 0.006) * settle
-          d3.select(this).attr('cy', y).attr('cx', d.x * innerW + dx)
+          const rest = restY(d)
+          const prev = base[d.id] == null ? launchY : base[d.id]
+          const next = prev + (rest - prev) * k
+          base[d.id] = next
 
-          // Fire a crossing flash the moment an evaded dot punches the line.
-          if (d.evaded && local >= 0.70 && !flashed.has(d.id)) {
-            flashed.add(d.id)
+          // slip-past flash only when an evaded dot newly rises across the line
+          if (d.evaded && prev > defenderY && next <= defenderY) {
             spawnFlash(d.x * innerW, defenderY)
           }
+
+          const dy = Math.sin(tSec * d.speed + d.phase) * (innerH * d.amp)
+          const dx = Math.cos(tSec * (d.speed * 0.6) + d.phase) * (innerW * 0.006)
+          d3.select(this).attr('cy', next + dy).attr('cx', d.x * innerW + dx)
         })
 
-      // Faint motion trails behind moving dots; fade fast.
-      if (tMs - lastTrail > 90) {
-        lastTrail = tMs
+      // Faint trails only behind dots still travelling to a new spot.
+      if (now - lastTrail > 110) {
+        lastTrail = now
         const trails = g.select('.trails')
         g.select('.attackers').selectAll('circle.attacker').each(function (d) {
+          const rest = restY(d)
+          if (Math.abs((base[d.id] ?? rest) - rest) < 3) return // settled → no trail
           const cx = +d3.select(this).attr('cx')
           const cy = +d3.select(this).attr('cy')
           trails.append('circle')
