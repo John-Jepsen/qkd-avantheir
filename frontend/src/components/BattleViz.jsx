@@ -20,6 +20,27 @@ const DOT_R = 7
 // in the zone below it, driven by accuracy.
 const THRESHOLD_FRAC = 0.40
 
+// Stable order in which lanes are allowed to break through, spread across the
+// width (van der Corput sequence) so accumulating crossings fill the arena
+// evenly. BREAKTHROUGH_RANK[lane] = the lane's position in that order; a lane
+// is shown evaded when its rank is below the currently revealed count.
+function vanDerCorput(i) {
+  let result = 0, denom = 1
+  while (i > 0) {
+    denom *= 2
+    result += (i % 2) / denom
+    i = Math.floor(i / 2)
+  }
+  return result
+}
+const BREAKTHROUGH_RANK = (() => {
+  const order = Array.from({ length: ATTACKER_COUNT }, (_, i) => i)
+    .sort((a, b) => vanDerCorput(a) - vanDerCorput(b))
+  const rank = new Array(ATTACKER_COUNT)
+  order.forEach((lane, k) => { rank[lane] = k })
+  return rank
+})()
+
 function seedRand(seed) {
   let s = seed || 1
   return () => {
@@ -51,6 +72,8 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
   const prevDefAccRef = useRef(null)
   const prevEvRef = useRef(null)
   const baseYRef = useRef({}) // persistent per-dot vertical position across gens
+  const shownEvadedRef = useRef(0) // breakthroughs revealed so far (ramps to target)
+  const stepGenRef = useRef(0)     // last generation the ramp stepped on
   const [dims, setDims] = useState({ innerW: 0, innerH: HEIGHT - MARGIN.top - MARGIN.bottom })
 
   const latest = generations[generations.length - 1]
@@ -63,16 +86,23 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const seed = generations.length === 0 ? 1 : (generations.length * 7919)
     const rand = seedRand(seed)
     const evRate = latest?.evasion_rate || 0
-    const evadedCount = Math.round(evRate * ATTACKER_COUNT)
-    // Spread the evaded lanes evenly across the width (Bresenham-style pick) so
-    // breakthroughs sweep across the arena instead of bunching on the left, and
-    // tag each with its order so they can slip past the line one at a time.
-    let evadeOrder = 0
+    const target = Math.round(evRate * ATTACKER_COUNT)
+
+    // Reveal breakthroughs gradually: step the shown count toward the real
+    // target by at most one per generation, so attackers slip past the line one
+    // at a time over the run rather than the whole set crossing on generation 1.
+    if (generations.length < stepGenRef.current) shownEvadedRef.current = 0 // demo restarted
+    if (stepGenRef.current !== generations.length) {
+      stepGenRef.current = generations.length
+      const shown = shownEvadedRef.current
+      if (shown < target) shownEvadedRef.current = shown + 1
+      else if (shown > target) shownEvadedRef.current = shown - 1
+    }
+    const evadedCount = shownEvadedRef.current
+
     return Array.from({ length: ATTACKER_COUNT }, (_, i) => {
-      const evaded =
-        Math.floor((i * evadedCount) / ATTACKER_COUNT) !==
-        Math.floor(((i + 1) * evadedCount) / ATTACKER_COUNT)
-      const evadeIndex = evaded ? evadeOrder++ : -1
+      // Stable, width-spread reveal order so accumulated crossings don't shuffle.
+      const evaded = BREAKTHROUGH_RANK[i] < evadedCount
       // Where in its zone the dot sits — random spread per dot, capped so
       // dots cluster near the line not at the extremes.
       const zoneFrac = 0.15 + rand() * 0.75
@@ -80,8 +110,6 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
         id: i,
         x: (i + 1) / (ATTACKER_COUNT + 1),
         evaded,
-        evadeIndex,
-        evadedCount,
         zoneFrac,
         phase: rand() * Math.PI * 2,
         speed: 0.4 + rand() * 0.6,
