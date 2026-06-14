@@ -22,8 +22,8 @@ SERVICE_NAME="${SERVICE_NAME:-qkd-api}"
 REPO_NAME="${REPO_NAME:-qkd-repo}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO_NAME}/${SERVICE_NAME}"
 
-# GitHub Pages URL for CORS — update after first Pages deploy
-GITHUB_PAGES_URL="${GITHUB_PAGES_URL:-https://john-jepsen.github.io}"
+# CORS origins for the frontend (comma-separated; override via env)
+CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:3000}"
 
 echo "==> Project:  ${PROJECT}"
 echo "==> Region:   ${REGION}"
@@ -65,7 +65,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --concurrency 80 \
   --min-instances 0 \
   --max-instances 3 \
-  --set-env-vars "CORS_ORIGINS=${GITHUB_PAGES_URL},http://localhost:3000"
+  --set-env-vars "CORS_ORIGINS=${CORS_ORIGINS}"
 
 # ── 4. Print the service URL ────────────────────────────────────────────────
 
@@ -82,8 +82,8 @@ echo " Docs:     ${SERVICE_URL}/docs"
 echo "=========================================="
 echo ""
 echo "Next steps:"
-echo "  1. Set GitHub repo variables for the frontend workflow:"
-echo "     gh variable set VITE_API_URL --body '${SERVICE_URL}'"
-echo "     gh variable set VITE_WS_URL  --body '${SERVICE_URL/https:/wss:}/ws/evolution'"
-echo "  2. Push to main to trigger the GitHub Pages deploy"
-echo "  3. Visit https://john-jepsen.github.io/qkd-avantheir/"
+echo "  1. Point the frontend at this backend (frontend/.env):"
+echo "     VITE_API_URL=${SERVICE_URL}"
+echo "     VITE_WS_URL=${SERVICE_URL/https:/wss:}/ws/evolution"
+echo "  2. Build and serve the frontend:"
+echo "     cd frontend && npm run build && npm run preview"

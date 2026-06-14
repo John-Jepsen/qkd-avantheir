@@ -77,8 +77,6 @@
 |--------|-----------|---------|
 | IBM Qiskit Aer | Python library (local) | Quantum circuit simulation backend |
 | ETSI GS QKD 014 API | REST (self-hosted) | Key management standard API |
-| GitHub Pages | Static hosting | Frontend dashboard deployment |
-| GitHub Actions | CI/CD | Automated testing and deployment |
 
 ### User Interfaces
 
@@ -274,7 +272,7 @@ See [Section 3: Database Design](#3-database-design) for schema details. The sys
 | **Frontend** | React | 19.x |
 | **Visualization** | D3.js | 7.9 |
 | **Build Tool** | Vite | 8.x |
-| **Deployment** | GitHub Pages + GitHub Actions | — |
+| **Deployment** | Static build (Vite) — local / self-hosted | — |
 | **Version Control** | Git / GitHub | — |
 
 ### Database Choice
@@ -540,7 +538,7 @@ N/A — solo project.
 - Build React + D3 dashboard with 6 visualization components — depends on FastAPI WebSocket
 - Write capstone brief and outline — depends on all milestones
 - Prepare final presentation — depends on all milestones
-- Set up GitHub Pages deployment via GitHub Actions
+- Produce a static frontend build (Vite) for local / self-hosted serving
 
 ### Risk Analysis
 
@@ -551,7 +549,7 @@ This is the single most significant risk because the entire ML security layer (5
 **Secondary Risks:**
 
 - **Qiskit Aer version instability:** Qiskit's rapid release cadence (2.x breaking changes from 1.x) could break quantum circuit simulation. Mitigation: pinned versions in requirements.txt; classical fallback backend eliminates hard dependency on Qiskit for core functionality.
-- **GitHub Pages limitations for dynamic content:** The React dashboard requires WebSocket connections to the FastAPI backend, which GitHub Pages (static hosting) cannot serve. Mitigation: deploy frontend as static build to GitHub Pages; backend must run locally or on a separate service. Document this clearly in deployment instructions.
+- **Static hosting limitations for dynamic content:** The React dashboard requires WebSocket connections to the FastAPI backend, which a static file host cannot serve. Mitigation: serve the frontend as a static build (locally or self-hosted) and run the backend locally or on a separate service. Document this clearly in deployment instructions.
 - **Evolutionary gym resource consumption:** Large population sizes (200) with many generations (200) can exhaust memory and take significant time. Mitigation: API enforces bounds (population ≤200, generations ≤200); concurrent evolution runs are blocked at the endpoint level.
 
 ---
@@ -634,61 +632,31 @@ jobs:
 
 | Component | Platform | Tool |
 |-----------|----------|------|
-| Frontend (React dashboard) | GitHub Pages | GitHub Actions (build + deploy) |
+| Frontend (React dashboard) | Local / static build | Vite (`npm run build`) |
 | Backend (FastAPI + KME) | Local / self-hosted | Python + Uvicorn |
-| CI/CD | GitHub Actions | pytest, Vite build |
 
 ### Step-by-Step Deployment Procedure
 
-#### Frontend (GitHub Pages)
+#### Frontend (Static build)
 
-1. Configure Vite for static build with correct base path:
-   ```js
-   // vite.config.js
-   export default defineConfig({
-     base: '/qkd-avantheir/',
-     plugins: [react()],
-   })
+1. Build the static bundle:
+   ```bash
+   cd frontend
+   npm ci && npm run build   # outputs to frontend/dist
    ```
 
-2. Create GitHub Actions workflow (`.github/workflows/deploy.yml`):
-   ```yaml
-   name: Deploy Frontend to GitHub Pages
-   on:
-     push:
-       branches: [main]
-       paths: ['frontend/**']
-   
-   permissions:
-     contents: read
-     pages: write
-     id-token: write
-   
-   jobs:
-     build:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - uses: actions/setup-node@v4
-           with:
-             node-version: 18
-         - run: cd frontend && npm ci && npm run build
-         - uses: actions/upload-pages-artifact@v3
-           with:
-             path: frontend/dist
-   
-     deploy:
-       needs: build
-       runs-on: ubuntu-latest
-       environment:
-         name: github-pages
-       steps:
-         - uses: actions/deploy-pages@v4
+2. Serve the build locally (or from any static file server):
+   ```bash
+   npm run preview           # serves frontend/dist
+   # or, for development:
+   npm run dev               # http://localhost:3000
    ```
 
-3. Enable GitHub Pages in repository settings → Pages → Source: GitHub Actions
-
-4. Push to main branch — workflow triggers automatically
+3. Point the dashboard at the backend via `frontend/.env`:
+   ```
+   VITE_API_URL=http://localhost:8000
+   VITE_WS_URL=ws://localhost:8000/ws/evolution
+   ```
 
 #### Backend (Local Development)
 
@@ -743,7 +711,7 @@ No secrets are required — the system uses locally-generated quantum keys and d
 
 ### Rollback Plan
 
-- **Frontend:** GitHub Pages maintains previous deployment; revert by pushing a fix to main or manually triggering a re-deploy from a previous commit via GitHub Actions
+- **Frontend:** Rebuild from any prior commit with `npm run build`; no hosted deployment to roll back
 - **Backend:** No persistent state to roll back — restart services with previous code checkout
 - **ML models:** Regenerate from scratch via `python train_all_models.py` (deterministic with fixed random seeds)
 - **Git:** All changes tracked in version control; `git revert <commit>` for any problematic change
