@@ -14,6 +14,11 @@ const ATTACKER_COUNT = 30
 const HEIGHT = 460
 const MARGIN = { top: 56, right: 90, bottom: 64, left: 60 }
 const DOT_R = 7
+// Fixed vertical position of the 11% QBER threshold (the blue band's lower
+// edge). Visually 40% of the arena for legibility; it still represents the 11%
+// threshold. Dots that reach the band got past; the green defender line moves
+// in the zone below it, driven by accuracy.
+const THRESHOLD_FRAC = 0.40
 
 function seedRand(seed) {
   let s = seed || 1
@@ -140,6 +145,21 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       .attr('fill', 'url(#arena-grad)').attr('rx', 12)
       .attr('stroke', '#30363d').attr('stroke-width', 1)
 
+    // 11% QBER threshold band — fixed reference at the top of the arena.
+    // Marks the BB84 abort threshold (QBER > 11% = compromised). Drawn taller
+    // than 11% purely for legibility; it still represents the 11% threshold.
+    const qberBand = g.append('g').attr('class', 'qber-band')
+    const qberH = innerH * THRESHOLD_FRAC
+    qberBand.append('rect')
+      .attr('x', 0).attr('y', 0)
+      .attr('width', innerW).attr('height', qberH)
+      .attr('fill', '#58a6ff').attr('opacity', 0.16)
+    qberBand.append('text')
+      .attr('x', 10).attr('y', 18)
+      .attr('fill', '#58a6ff').attr('font-size', 13).attr('font-weight', 800)
+      .attr('opacity', 0.95)
+      .text('⚠ 11% QBER abort threshold — attacker is past if a dot enters this band')
+
     // Lane grid — subtle vertical lines so eye reads x positions as lanes
     const grid = g.append('g').attr('class', 'arena-grid')
     for (let i = 0; i < 6; i++) {
@@ -161,9 +181,9 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
     const defenderBadge = g.append('g').attr('transform', `translate(${innerW - 200}, ${innerH - 32})`)
     defenderBadge.append('rect').attr('width', 190).attr('height', 24).attr('rx', 12)
-      .attr('fill', '#0a2236').attr('stroke', '#58a6ff').attr('stroke-width', 1).attr('opacity', 0.85)
+      .attr('fill', '#0a2a18').attr('stroke', '#3fb950').attr('stroke-width', 1).attr('opacity', 0.85)
     defenderBadge.append('text').attr('x', 95).attr('y', 16).attr('text-anchor', 'middle')
-      .attr('fill', '#58a6ff').attr('font-size', 11).attr('font-weight', 700)
+      .attr('fill', '#3fb950').attr('font-size', 11).attr('font-weight', 700)
       .text('↓ DEFENDER WINS ZONE')
 
     // ---- Defender layer ----
@@ -172,12 +192,12 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     // Glow line behind sharp line — single bright stroke, no wide band.
     defLayer.append('line').attr('class', 'def-line-halo')
       .attr('x1', 0).attr('x2', innerW)
-      .attr('stroke', '#58a6ff').attr('stroke-width', 14).attr('opacity', 0.3)
+      .attr('stroke', '#3fb950').attr('stroke-width', 14).attr('opacity', 0.3)
       .attr('stroke-linecap', 'round')
 
     defLayer.append('line').attr('class', 'def-line')
       .attr('x1', 0).attr('x2', innerW)
-      .attr('stroke', '#58a6ff').attr('stroke-width', 4)
+      .attr('stroke', '#3fb950').attr('stroke-width', 4)
       .attr('stroke-linecap', 'round')
       .style('filter', 'url(#line-glow)')
 
@@ -215,7 +235,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
     const legendItems = [
       { x: 12, color: '#f85149', label: '🤖 each red dot = one attacker' },
-      { x: 250, color: '#58a6ff', label: '🛡️ blue line = defender decision boundary' },
+      { x: 250, color: '#3fb950', label: '🛡️ green line = defender decision boundary' },
       { x: 580, color: '#fff',    label: '⚡ white flash = attacker crossed' },
     ]
     legendItems.forEach(item => {
@@ -246,12 +266,15 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const { innerW, innerH } = dims
     const dur = TRANSITION_MS[speed] || TRANSITION_MS.normal
 
-    // Defender position — clamped so the line never overlaps the corner
-    // zone badges at the very top/bottom of the arena.
-    const TOP_GUARD = 44
-    const BOTTOM_GUARD = 44
-    const rawDefenderY = innerH * (1 - (latest.defender_accuracy || 0))
-    const defenderY = Math.max(TOP_GUARD, Math.min(innerH - BOTTOM_GUARD, rawDefenderY))
+    // Blue band (top THRESHOLD_FRAC) is the fixed 11% threshold. The green
+    // defender line moves within the zone BELOW it, driven by accuracy: the
+    // better the defender, the higher (closer to the threshold) it holds the
+    // line, leaving a wide "caught" zone beneath it.
+    const bandBottom = innerH * THRESHOLD_FRAC
+    const lineTop = bandBottom + 24
+    const lineBot = innerH - 28
+    const acc = latest.defender_accuracy || 0
+    const defenderY = lineBot - (lineBot - lineTop) * acc
 
     defLayer.select('.def-line')
       .transition().duration(dur).ease(d3.easeCubicInOut)
@@ -278,7 +301,7 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     hud.select('.hud-score')
       .append('tspan').attr('fill', '#8b949e').text('   ·   ')
     hud.select('.hud-score')
-      .append('tspan').attr('fill', '#58a6ff').text(`🛡️ ${dfPct}% caught`)
+      .append('tspan').attr('fill', '#3fb950').text(`🛡️ ${dfPct}% caught`)
 
     // Generation-change pulse + delta popup
     const isNewGen = generations.length !== prevGenCountRef.current
@@ -335,23 +358,17 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
 
     attackerSel.exit().remove()
 
-    // Position each dot above or below the defender line based on whether
-    // it evaded or got caught. Bright red = evaded; muted orange = caught.
-    // Pack dots in tight bands hugging the line on either side so the line
-    // is always at the visual center of the action — the area beyond the
-    // bands is the defender's secured zone (no action happens there).
+    // Evaded dots float up INTO the fixed blue band ("got past"); caught dots
+    // spread across the secured zone below the moving green defender line.
     const DOT_R = 7
-    const BAND_ABOVE = 90    // px above line where evaded dots float
-    const BAND_BELOW = 140   // px below line where caught dots stack
     const targetY = (d) => {
-      const gap = 14
       if (d.evaded) {
-        const top = Math.max(8, defenderY - gap - BAND_ABOVE)
-        const bot = defenderY - gap
+        const top = 32          // clear of the band label
+        const bot = bandBottom - 8
         return top + (bot - top) * d.zoneFrac
       }
-      const top = defenderY + gap
-      const bot = Math.min(innerH - 8, defenderY + gap + BAND_BELOW)
+      const top = defenderY + 14
+      const bot = innerH - 12
       return top + (bot - top) * d.zoneFrac
     }
 
@@ -413,24 +430,22 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
     const { g } = layersRef.current
     if (!g) return
     const { innerW, innerH } = dims
-    const TOP_GUARD = 44
-    const BOTTOM_GUARD = 44
-    const rawDefY = innerH * (1 - (latest.defender_accuracy || 0))
-    const defenderY = Math.max(TOP_GUARD, Math.min(innerH - BOTTOM_GUARD, rawDefY))
+    const bandBottom = innerH * THRESHOLD_FRAC
+    const lineTop = bandBottom + 24
+    const lineBot = innerH - 28
+    const acc = latest.defender_accuracy || 0
+    const defenderY = lineBot - (lineBot - lineTop) * acc
     const start = Date.now()
     let lastTrail = 0
 
-    const BAND_ABOVE = 90
-    const BAND_BELOW = 140
     const targetY = (d) => {
-      const gap = 14
       if (d.evaded) {
-        const top = Math.max(8, defenderY - gap - BAND_ABOVE)
-        const bot = defenderY - gap
+        const top = 32
+        const bot = bandBottom - 8
         return top + (bot - top) * d.zoneFrac
       }
-      const top = defenderY + gap
-      const bot = Math.min(innerH - 8, defenderY + gap + BAND_BELOW)
+      const top = defenderY + 14
+      const bot = innerH - 12
       return top + (bot - top) * d.zoneFrac
     }
 
@@ -482,9 +497,10 @@ export default function BattleViz({ generations, status, speed = 'normal' }) {
       <p className="battle-howto">
         How to read this: each <span className="team-red-text">🤖 red dot</span> is one
         attacker. Their height = how close they got to fooling the detector.
-        The <span className="team-blue-text">🛡️ blue line</span> is where the
-        defender draws the line. Above the line means the attack worked.
-        Below means it got caught.
+        The <span style={{ color: '#3fb950', fontWeight: 600 }}>🛡️ green line</span> is
+        where the defender draws the line. Above the line means the attack worked.
+        Below means it got caught. The <span style={{ color: '#58a6ff', fontWeight: 600 }}>
+        blue band</span> at the top marks the fixed 11% QBER abort threshold.
       </p>
 
       <div className="battle-stage">
