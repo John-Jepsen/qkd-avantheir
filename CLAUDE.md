@@ -48,6 +48,13 @@ qkd-avantheir/
 │   └── README.md               # Quick-start with three-terminal setup
 ├── frontend/                   # React + D3 adversarial benchmark dashboard (port 3000)
 │   └── src/components/         # EvolutionChart, PhylogenyTree, Controls, etc.
+├── poc/                        # Submission 3 MVP / Proof of Concept package — thin
+│   │                           # shell over ../implementation/ (no duplicated source)
+│   ├── README.md               # MVP scope statement and run instructions
+│   ├── docker/                 # Dockerfile + docker-compose for one-command reproduction
+│   ├── scripts/                # Numbered demo scripts (00_setup … 05_full_api_sweep, run_mvp.sh)
+│   ├── docs/                   # ARCHITECTURE, MVP_SCOPE, RESULTS, NEXT_STEPS
+│   └── evidence/               # Captured outputs (API JSON responses, server logs)
 ├── qkdsec/                     # Git submodule → github.com/John-Jepsen/qkdsec
 │                               # Published pip package: ETSI 014 client + doctor probe,
 │                               # numerical key-rate proofs, BB84 simulator
