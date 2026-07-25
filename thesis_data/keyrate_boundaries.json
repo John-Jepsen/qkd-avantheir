@@ -1,0 +1,118 @@
+{
+  "metadata": {
+    "experiment": "exp1_keyrate_sweep",
+    "generated_utc": "2026-07-25T17:14:16.401337+00:00",
+    "qkdsec_version": "unknown",
+    "qkdsec_git_sha": "d3edfc211732066e195c44f8234821d3be25db1e",
+    "python": "3.14.6",
+    "functions_used": [
+      "qkdsec.proofs.key_rate (Devetak-Winter SDP; reproduces Shor-Preskill 1-2*H2(Q) for BB84 at f_ec=1)",
+      "qkdsec.proofs.BB84(f_ec)",
+      "qkdsec.proofs.DepolarizingChannel(qber)",
+      "qkdsec.proofs.finite_size.tomamichel_correction(n_detected, eps_security)"
+    ],
+    "finite_size_formula": "r_finite = max(0, r_asym - yield * 7*sqrt(log2(2/eps)/n_detected)); n_detected = int(yield * n_signals); yield = 1.0 for DepolarizingChannel (replicates qkdsec.proofs._api.key_rate)",
+    "eps_security": 1e-10,
+    "solver": "CLARABEL",
+    "f_ec_values": [
+      1.0,
+      1.16
+    ],
+    "f_ec_note": "1.0 = ideal (Shannon-limit) reconciliation; 1.16 = qkdsec package default (realistic Cascade/LDPC)",
+    "block_sizes": [
+      10000,
+      100000,
+      1000000,
+      10000000,
+      100000000,
+      1000000000
+    ],
+    "qber_sweep": {
+      "start": 0.0,
+      "stop": 0.15,
+      "step": 0.0025
+    },
+    "bisection_tolerance": 1e-06,
+    "reference_threshold": 0.11,
+    "caveats": [
+      "SDP uses CVXPY quantum_rel_entr Pade approximation (2,2); r_lower is a numerical, not formally verified, lower bound (per qkdsec.proofs.sdp docstring).",
+      "Boundary = largest QBER at which the certified rate is strictly positive, to within the bisection tolerance."
+    ]
+  },
+  "boundaries": {
+    "f_ec=1.0": {
+      "asymptotic": {
+        "zero_rate_qber_boundary": 0.1100275,
+        "gap_from_0.11_abs": -2.75e-05,
+        "gap_from_0.11_pct": -0.025
+      },
+      "10000": {
+        "zero_rate_qber_boundary": 0.0521015,
+        "gap_from_0.11_abs": 0.0578985,
+        "gap_from_0.11_pct": 52.635
+      },
+      "100000": {
+        "zero_rate_qber_boundary": 0.0896364,
+        "gap_from_0.11_abs": 0.0203636,
+        "gap_from_0.11_pct": 18.512
+      },
+      "1000000": {
+        "zero_rate_qber_boundary": 0.1033499,
+        "gap_from_0.11_abs": 0.0066501,
+        "gap_from_0.11_pct": 6.046
+      },
+      "10000000": {
+        "zero_rate_qber_boundary": 0.107892,
+        "gap_from_0.11_abs": 0.002108,
+        "gap_from_0.11_pct": 1.916
+      },
+      "100000000": {
+        "zero_rate_qber_boundary": 0.10935,
+        "gap_from_0.11_abs": 0.00065,
+        "gap_from_0.11_pct": 0.591
+      },
+      "1000000000": {
+        "zero_rate_qber_boundary": 0.1098129,
+        "gap_from_0.11_abs": 0.0001871,
+        "gap_from_0.11_pct": 0.17
+      }
+    },
+    "f_ec=1.16": {
+      "asymptotic": {
+        "zero_rate_qber_boundary": 0.0981056,
+        "gap_from_0.11_abs": 0.0118944,
+        "gap_from_0.11_pct": 10.813
+      },
+      "10000": {
+        "zero_rate_qber_boundary": 0.0469711,
+        "gap_from_0.11_abs": 0.0630289,
+        "gap_from_0.11_pct": 57.299
+      },
+      "100000": {
+        "zero_rate_qber_boundary": 0.0802368,
+        "gap_from_0.11_abs": 0.0297632,
+        "gap_from_0.11_pct": 27.057
+      },
+      "1000000": {
+        "zero_rate_qber_boundary": 0.0922709,
+        "gap_from_0.11_abs": 0.0177291,
+        "gap_from_0.11_pct": 16.117
+      },
+      "10000000": {
+        "zero_rate_qber_boundary": 0.0962414,
+        "gap_from_0.11_abs": 0.0137586,
+        "gap_from_0.11_pct": 12.508
+      },
+      "100000000": {
+        "zero_rate_qber_boundary": 0.0975145,
+        "gap_from_0.11_abs": 0.0124855,
+        "gap_from_0.11_pct": 11.35
+      },
+      "1000000000": {
+        "zero_rate_qber_boundary": 0.0979185,
+        "gap_from_0.11_abs": 0.0120815,
+        "gap_from_0.11_pct": 10.983
+      }
+    }
+  }
+}

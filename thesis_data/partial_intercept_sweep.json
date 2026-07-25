@@ -1,0 +1,163 @@
+{
+  "metadata": {
+    "experiment": "exp3_partial_intercept_sweep",
+    "description": "Partial intercept-resend sub-threshold exploit sweep: measured vs theoretical QBER, Eve info gain, and ML detector performance vs the static 11% policy.",
+    "n_bits": 4096,
+    "trials_per_fraction": 20,
+    "base_error_rate": 0.01,
+    "qber_threshold": 0.11,
+    "ir_qber_per_intercept": 0.25,
+    "fractions": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "backend": "qiskit",
+    "model_path": "/Users/johnjepsen/Desktop/mscs/qkd-avantheir/implementation/data/eavesdrop_model.pkl",
+    "info_gain_definition": "0.5 * eavesdrop_fraction",
+    "p_attack_definition": "1 - P(clean) from RF classifier",
+    "detection_definition": "predicted label != clean"
+  },
+  "arrays": {
+    "eavesdrop_fraction": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "qber_measured": [
+      0.005625207282455451,
+      0.033012462890853224,
+      0.05959101269217119,
+      0.08048709957527139,
+      0.10818949955503956,
+      0.13377676903561952,
+      0.16437231477732234,
+      0.18206600654956678,
+      0.21012468447201432,
+      0.2211929267820904,
+      0.2575016039835215
+    ],
+    "qber_measured_std": [
+      0.0044713886300481575,
+      0.01076700478122673,
+      0.020130357223053202,
+      0.016750109804568463,
+      0.022603086262072233,
+      0.018536738866475614,
+      0.0294468385708743,
+      0.023148315699807884,
+      0.029087636694568136,
+      0.03047159217912776,
+      0.02891862254394909
+    ],
+    "qber_theory": [
+      0.01,
+      0.035,
+      0.060000000000000005,
+      0.08499999999999999,
+      0.11,
+      0.135,
+      0.16,
+      0.185,
+      0.21000000000000002,
+      0.23500000000000001,
+      0.26
+    ],
+    "sift_ratio": [
+      0.5005859375,
+      0.4968505859375,
+      0.50255126953125,
+      0.498486328125,
+      0.500927734375,
+      0.5013671875,
+      0.49774169921875,
+      0.499609375,
+      0.50064697265625,
+      0.5000244140625,
+      0.50203857421875
+    ],
+    "eve_info_gain": [
+      0.0,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5
+    ],
+    "ml_p_attack": [
+      0.005515749481053644,
+      0.2928647156486016,
+      0.7375603207851764,
+      0.9561150749769338,
+      0.9923721939651889,
+      0.9995418011645402,
+      0.9992085231111927,
+      0.9999431830208094,
+      0.9999954663224834,
+      0.9999882402718668,
+      1.0
+    ],
+    "ml_detection_rate": [
+      0.0,
+      0.15,
+      0.8,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "below_threshold": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "exploit_window": {
+    "max_eavesdrop_fraction_below_threshold": 0.4,
+    "qber_at_window_edge": 0.10818949955503956,
+    "eve_info_gain_at_window_edge": 0.2,
+    "ml_detection_rate_at_window_edge": 1.0,
+    "ml_p_attack_at_window_edge": 0.9923721939651889,
+    "ml_detection_rate_in_window_mean": 0.7375,
+    "static_policy_detection_rate_in_window": 0.0,
+    "sub_threshold_fractions": [
+      0.1,
+      0.2,
+      0.3,
+      0.4
+    ]
+  }
+}
