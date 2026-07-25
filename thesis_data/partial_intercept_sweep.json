@@ -1,9 +1,11 @@
 {
   "metadata": {
     "experiment": "exp3_partial_intercept_sweep",
-    "description": "Partial intercept-resend sub-threshold exploit sweep: measured vs theoretical QBER, Eve info gain, and ML detector performance vs the static 11% policy.",
+    "description": "Partial intercept-resend sub-threshold exploit sweep: measured vs theoretical QBER, Eve info gain, and ML detector performance vs the static 11% policy. Mean +/- SD over independent replicate batches.",
     "n_bits": 4096,
-    "trials_per_fraction": 20,
+    "n_seeds": 5,
+    "trials_per_seed": 15,
+    "trials_per_fraction_total": 75,
     "base_error_rate": 0.01,
     "qber_threshold": 0.11,
     "ir_qber_per_intercept": 0.25,
@@ -24,7 +26,8 @@
     "model_path": "/Users/johnjepsen/Desktop/mscs/qkd-avantheir/implementation/data/eavesdrop_model.pkl",
     "info_gain_definition": "0.5 * eavesdrop_fraction",
     "p_attack_definition": "1 - P(clean) from RF classifier",
-    "detection_definition": "predicted label != clean"
+    "detection_definition": "predicted label != clean",
+    "error_bar_definition": "+/-1 SD of the per-batch mean across N_SEEDS replicate batches; BB84 uses secrets (OS entropy), so batches are independent draws (seed labels a batch, not a fixed RNG)."
   },
   "arrays": {
     "eavesdrop_fraction": [
@@ -40,32 +43,6 @@
       0.9,
       1.0
     ],
-    "qber_measured": [
-      0.005625207282455451,
-      0.033012462890853224,
-      0.05959101269217119,
-      0.08048709957527139,
-      0.10818949955503956,
-      0.13377676903561952,
-      0.16437231477732234,
-      0.18206600654956678,
-      0.21012468447201432,
-      0.2211929267820904,
-      0.2575016039835215
-    ],
-    "qber_measured_std": [
-      0.0044713886300481575,
-      0.01076700478122673,
-      0.020130357223053202,
-      0.016750109804568463,
-      0.022603086262072233,
-      0.018536738866475614,
-      0.0294468385708743,
-      0.023148315699807884,
-      0.029087636694568136,
-      0.03047159217912776,
-      0.02891862254394909
-    ],
     "qber_theory": [
       0.01,
       0.035,
@@ -78,19 +55,6 @@
       0.21000000000000002,
       0.23500000000000001,
       0.26
-    ],
-    "sift_ratio": [
-      0.5005859375,
-      0.4968505859375,
-      0.50255126953125,
-      0.498486328125,
-      0.500927734375,
-      0.5013671875,
-      0.49774169921875,
-      0.499609375,
-      0.50064697265625,
-      0.5000244140625,
-      0.50203857421875
     ],
     "eve_info_gain": [
       0.0,
@@ -105,59 +69,138 @@
       0.45,
       0.5
     ],
-    "ml_p_attack": [
-      0.005515749481053644,
-      0.2928647156486016,
-      0.7375603207851764,
-      0.9561150749769338,
-      0.9923721939651889,
-      0.9995418011645402,
-      0.9992085231111927,
-      0.9999431830208094,
-      0.9999954663224834,
-      0.9999882402718668,
-      1.0
-    ],
-    "ml_detection_rate": [
-      0.0,
-      0.15,
-      0.8,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0
-    ],
     "below_threshold": [
       true,
       true,
       true,
       true,
-      true,
+      false,
       false,
       false,
       false,
       false,
       false,
       false
+    ],
+    "qber_measured_mean": [
+      0.006986979543750818,
+      0.032437832400113366,
+      0.05544164249373631,
+      0.08184742080972639,
+      0.11000650388670866,
+      0.1289265780459695,
+      0.15559992758216437,
+      0.17966434472219406,
+      0.20123223590054792,
+      0.2257144626091092,
+      0.2565864704071678
+    ],
+    "qber_measured_std": [
+      0.0008083768363107657,
+      0.003211710726711848,
+      0.004827397185817101,
+      0.002007417821600737,
+      0.0032341480830905987,
+      0.006154721717779769,
+      0.005149451195357267,
+      0.005520045295448731,
+      0.006545003304963886,
+      0.001948667998758254,
+      0.006846858802456417
+    ],
+    "sift_ratio_mean": [
+      0.49984375000000003,
+      0.5004720052083333,
+      0.5001334635416667,
+      0.4998046875,
+      0.5022819010416667,
+      0.500458984375,
+      0.4997916666666667,
+      0.4993033854166667,
+      0.500712890625,
+      0.4998600260416667,
+      0.50037109375
+    ],
+    "sift_ratio_std": [
+      0.0012193177903041504,
+      0.001004589147056501,
+      0.002505567497155411,
+      0.00188535304515413,
+      0.0013701063212946203,
+      0.0026368272547118753,
+      0.0019431548913566871,
+      0.0013612221047608695,
+      0.0007161014427530023,
+      0.0013194480137470052,
+      0.0034808878952473396
+    ],
+    "ml_p_attack_mean": [
+      0.008628506498066674,
+      0.30269281670802595,
+      0.6918307127359801,
+      0.9273985330622878,
+      0.9897271753705045,
+      0.9967712241865565,
+      0.9996405073333525,
+      0.9997066534932518,
+      0.9998337707258338,
+      0.9999942217343942,
+      1.0
+    ],
+    "ml_p_attack_std": [
+      0.007045335860576576,
+      0.08375388406632744,
+      0.07101092579773317,
+      0.033698365759310935,
+      0.008580435959090324,
+      0.004636436522414428,
+      0.00029202794517539855,
+      0.0003266001011694079,
+      0.0002784031223209816,
+      5.299966882478958e-06,
+      0.0
+    ],
+    "ml_detection_rate_mean": [
+      0.0,
+      0.24,
+      0.7333333333333333,
+      0.9600000000000002,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ml_detection_rate_std": [
+      0.0,
+      0.09043106644167026,
+      0.0843274042711568,
+      0.05333333333333332,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
     ]
   },
   "exploit_window": {
-    "max_eavesdrop_fraction_below_threshold": 0.4,
-    "qber_at_window_edge": 0.10818949955503956,
-    "eve_info_gain_at_window_edge": 0.2,
-    "ml_detection_rate_at_window_edge": 1.0,
-    "ml_p_attack_at_window_edge": 0.9923721939651889,
-    "ml_detection_rate_in_window_mean": 0.7375,
+    "max_eavesdrop_fraction_below_threshold": 0.3,
+    "qber_at_window_edge": 0.08184742080972639,
+    "qber_std_at_window_edge": 0.002007417821600737,
+    "eve_info_gain_at_window_edge": 0.15,
+    "ml_detection_rate_at_window_edge": 0.9600000000000002,
+    "ml_detection_std_at_window_edge": 0.05333333333333332,
+    "ml_p_attack_at_window_edge": 0.9273985330622878,
+    "ml_detection_rate_in_window_mean": 0.6444444444444445,
     "static_policy_detection_rate_in_window": 0.0,
     "sub_threshold_fractions": [
       0.1,
       0.2,
-      0.3,
-      0.4
+      0.3
     ]
   }
 }

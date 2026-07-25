@@ -17,7 +17,7 @@ the textbook ~25% QBER on that qubit; non-intercepted qubits pass through the
 noisy channel untouched.
 
 We sweep eavesdrop_fraction over {0.0, 0.1, ..., 1.0} at a fixed modest base
-error_rate. For each fraction we run several trials and record:
+error_rate. For each fraction we record:
   - mean measured QBER (from BB84Result.qber)
   - theoretical QBER prediction: base_error + 0.25 * fraction
   - mean sift ratio
@@ -25,15 +25,28 @@ error_rate. For each fraction we run several trials and record:
   - the trained eavesdrop detector's mean P(attack) and detection rate,
     where P(attack) = 1 - P(clean) and "detected" = predicted label != "clean"
 
+Multi-seed error bars
+---------------------
+The BB84 simulator draws its channel noise from ``secrets`` (OS entropy), so
+every run is an independent draw and there is no seedable RNG. To put honest
+error bars on every metric we run ``N_SEEDS`` independent replicate *batches* per
+fraction, each a batch of ``TRIALS_PER_SEED`` trials. We compute the per-fraction
+mean within each batch, then aggregate mean ± standard deviation of those batch
+means across the ``N_SEEDS`` replicates. The band on each curve is ±1 SD of the
+batch-mean — a direct measure of run-to-run reproducibility. (Because BB84 uses
+OS entropy, the "seed" labels a replicate batch; it does not make a batch
+bitwise-reproducible.)
+
 We then locate the sub-threshold exploit window: the largest eavesdrop_fraction
-whose *measured* QBER stays below 0.11, and report the ML detector's detection
-rate within that window against the static policy's rate (0% by definition,
-since QBER < 0.11 there).
+whose *mean measured* QBER stays below 0.11, and report the ML detector's
+detection rate within that window against the static policy's rate (0% by
+definition, since QBER < 0.11 there).
 
 Outputs
 -------
   thesis_data/partial_intercept_sweep.json
   thesis_data/partial_intercept_sweep.csv
+  thesis_data/partial_intercept_sweep_per_seed.csv
   thesis_figures/subthreshold_qber.png
   thesis_figures/subthreshold_info_gain.png
 """
@@ -65,16 +78,21 @@ MODEL_PATH = IMPL_DIR / "data" / "eavesdrop_model.pkl"
 
 # ── Experiment configuration ──────────────────────────────────────────────────
 # n_bits=4096 raw qubits sift to ~2048 bits (well above the 40-bit floor) and
-# each Qiskit run is a few tenths of a second. 20 trials x 11 fractions = 220
-# runs; with the partial-intercept path running up to 3 circuits per run this
-# stays under a few minutes total. Reduce N_TRIALS/N_BITS if slower.
+# each Qiskit run is a few tenths of a second. N_SEEDS batches x TRIALS_PER_SEED
+# trials x 11 fractions Qiskit runs; with the partial-intercept path running up
+# to 3 circuits per run this stays a few minutes total. Reduce N_SEEDS or
+# TRIALS_PER_SEED if slower.
 N_BITS = 4096
-N_TRIALS = 20
+N_SEEDS = 5                 # independent replicate batches -> mean +/- SD bands
+TRIALS_PER_SEED = 15        # trials per batch (75 trials per fraction total)
 BASE_ERROR_RATE = 0.01
 FRACTIONS = [round(0.1 * i, 1) for i in range(11)]  # 0.0 .. 1.0
 QBER_THRESHOLD = 0.11
 # Classic intercept-resend induces 25% QBER on intercepted, matched-basis qubits.
 IR_QBER_PER_INTERCEPT = 0.25
+
+# Metrics we aggregate mean/std over across replicate batches.
+_AGG_METRICS = ["qber_measured", "sift_ratio", "ml_p_attack", "ml_detection_rate"]
 
 
 def eve_info_gain(fraction: float) -> float:
@@ -92,72 +110,89 @@ def eve_info_gain(fraction: float) -> float:
     return 0.5 * fraction
 
 
+def _run_batch(clf, frac, eavesdrop):
+    """Run TRIALS_PER_SEED trials at one fraction; return per-batch means."""
+    qbers, sifts, p_attacks, detections = [], [], [], []
+    for _ in range(TRIALS_PER_SEED):
+        proto = BB84Protocol(
+            error_rate=BASE_ERROR_RATE,
+            eavesdrop=eavesdrop,
+            eavesdrop_fraction=frac if eavesdrop else 1.0,
+            backend="qiskit",
+        )
+        result = proto.run(n_bits=N_BITS)
+
+        det = clf.predict_from_result(result)
+        p_attack = 1.0 - det.probabilities.get("clean", 0.0)
+        detected = det.predicted_label != "clean"
+
+        qbers.append(result.qber)
+        sifts.append(result.sift_ratio)
+        p_attacks.append(p_attack)
+        detections.append(1.0 if detected else 0.0)
+
+    return {
+        "qber_measured": float(np.mean(qbers)),
+        "sift_ratio": float(np.mean(sifts)),
+        "ml_p_attack": float(np.mean(p_attacks)),
+        "ml_detection_rate": float(np.mean(detections)),
+    }
+
+
 def run_sweep():
     print(f"Loading eavesdrop detector: {MODEL_PATH}")
     clf = EavesdropClassifier.load(str(MODEL_PATH))
 
-    rows = []
     per_fraction = {}
+    raw_rows = []   # one row per (fraction, seed)
 
     for frac in FRACTIONS:
         eavesdrop = frac > 0.0
-        qbers, sifts, p_attacks, detections = [], [], [], []
+        # Collect one batch-mean per replicate seed.
+        batches = {m: [] for m in _AGG_METRICS}
+        for seed in range(N_SEEDS):
+            bm = _run_batch(clf, frac, eavesdrop)
+            for m in _AGG_METRICS:
+                batches[m].append(bm[m])
+            raw_rows.append([
+                seed, frac, bm["qber_measured"], bm["sift_ratio"],
+                bm["ml_p_attack"], bm["ml_detection_rate"],
+            ])
 
-        for t in range(N_TRIALS):
-            proto = BB84Protocol(
-                error_rate=BASE_ERROR_RATE,
-                eavesdrop=eavesdrop,
-                eavesdrop_fraction=frac if eavesdrop else 1.0,
-                backend="qiskit",
-            )
-            result = proto.run(n_bits=N_BITS)
+        agg = {}
+        for m in _AGG_METRICS:
+            vals = np.array(batches[m], dtype=float)
+            agg[f"{m}_mean"] = float(np.mean(vals))
+            agg[f"{m}_std"] = float(np.std(vals))
 
-            det = clf.predict_from_result(result)
-            p_attack = 1.0 - det.probabilities.get("clean", 0.0)
-            detected = det.predicted_label != "clean"
-
-            qbers.append(result.qber)
-            sifts.append(result.sift_ratio)
-            p_attacks.append(p_attack)
-            detections.append(1.0 if detected else 0.0)
-
-        qber_measured = float(np.mean(qbers))
         qber_theory = BASE_ERROR_RATE + IR_QBER_PER_INTERCEPT * frac
-        sift_ratio = float(np.mean(sifts))
         info_gain = eve_info_gain(frac)
-        ml_p_attack = float(np.mean(p_attacks))
-        ml_detection_rate = float(np.mean(detections))
-        below_threshold = qber_measured < QBER_THRESHOLD
+        below_threshold = agg["qber_measured_mean"] < QBER_THRESHOLD
 
         per_fraction[frac] = {
             "eavesdrop_fraction": frac,
-            "qber_measured": qber_measured,
-            "qber_measured_std": float(np.std(qbers)),
             "qber_theory": qber_theory,
-            "sift_ratio": sift_ratio,
             "eve_info_gain": info_gain,
-            "ml_p_attack": ml_p_attack,
-            "ml_detection_rate": ml_detection_rate,
             "below_threshold": below_threshold,
+            **agg,
         }
 
-        rows.append([
-            frac, qber_measured, qber_theory, sift_ratio,
-            info_gain, ml_detection_rate, below_threshold,
-        ])
-
         print(
-            f"frac={frac:.1f}  QBER_meas={qber_measured:.4f} "
-            f"(theory={qber_theory:.4f})  sift={sift_ratio:.3f}  "
-            f"info_gain={info_gain:.3f}  ML_det={ml_detection_rate:.2f}  "
-            f"P(atk)={ml_p_attack:.2f}  below11%={below_threshold}"
+            f"frac={frac:.1f}  "
+            f"QBER={agg['qber_measured_mean']:.4f}±{agg['qber_measured_std']:.4f} "
+            f"(theory={qber_theory:.4f})  "
+            f"sift={agg['sift_ratio_mean']:.3f}  "
+            f"info_gain={info_gain:.3f}  "
+            f"ML_det={agg['ml_detection_rate_mean']:.2f}±"
+            f"{agg['ml_detection_rate_std']:.2f}  "
+            f"below11%={below_threshold}"
         )
 
-    return per_fraction, rows
+    return per_fraction, raw_rows
 
 
 def find_window(per_fraction):
-    """Largest eavesdrop_fraction whose MEASURED QBER stays below 0.11 (frac>0)."""
+    """Largest eavesdrop_fraction whose MEAN measured QBER stays below 0.11."""
     sub = [f for f, d in per_fraction.items()
            if f > 0.0 and d["below_threshold"]]
     if not sub:
@@ -166,29 +201,31 @@ def find_window(per_fraction):
     d = per_fraction[max_frac]
     return {
         "max_eavesdrop_fraction_below_threshold": max_frac,
-        "qber_at_window_edge": d["qber_measured"],
+        "qber_at_window_edge": d["qber_measured_mean"],
+        "qber_std_at_window_edge": d["qber_measured_std"],
         "eve_info_gain_at_window_edge": d["eve_info_gain"],
-        "ml_detection_rate_at_window_edge": d["ml_detection_rate"],
-        "ml_p_attack_at_window_edge": d["ml_p_attack"],
+        "ml_detection_rate_at_window_edge": d["ml_detection_rate_mean"],
+        "ml_detection_std_at_window_edge": d["ml_detection_rate_std"],
+        "ml_p_attack_at_window_edge": d["ml_p_attack_mean"],
         # ML detection averaged across ALL positive-fraction sub-threshold points
         "ml_detection_rate_in_window_mean": float(np.mean([
-            per_fraction[f]["ml_detection_rate"] for f in sub
+            per_fraction[f]["ml_detection_rate_mean"] for f in sub
         ])),
         "static_policy_detection_rate_in_window": 0.0,
         "sub_threshold_fractions": sorted(sub),
     }
 
 
-def write_outputs(per_fraction, rows, window):
+def write_outputs(per_fraction, raw_rows, window):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
     fracs = sorted(per_fraction.keys())
-    arr = {k: [per_fraction[f][k] for f in fracs] for k in [
-        "eavesdrop_fraction", "qber_measured", "qber_measured_std",
-        "qber_theory", "sift_ratio", "eve_info_gain",
-        "ml_p_attack", "ml_detection_rate", "below_threshold",
-    ]}
+    keys = ["eavesdrop_fraction", "qber_theory", "eve_info_gain",
+            "below_threshold"]
+    for m in _AGG_METRICS:
+        keys += [f"{m}_mean", f"{m}_std"]
+    arr = {k: [per_fraction[f][k] for f in fracs] for k in keys}
 
     # ── JSON ──
     json_path = DATA_DIR / "partial_intercept_sweep.json"
@@ -199,10 +236,13 @@ def write_outputs(per_fraction, rows, window):
                 "description": (
                     "Partial intercept-resend sub-threshold exploit sweep: "
                     "measured vs theoretical QBER, Eve info gain, and ML "
-                    "detector performance vs the static 11% policy."
+                    "detector performance vs the static 11% policy. Mean +/- SD "
+                    "over independent replicate batches."
                 ),
                 "n_bits": N_BITS,
-                "trials_per_fraction": N_TRIALS,
+                "n_seeds": N_SEEDS,
+                "trials_per_seed": TRIALS_PER_SEED,
+                "trials_per_fraction_total": N_SEEDS * TRIALS_PER_SEED,
                 "base_error_rate": BASE_ERROR_RATE,
                 "qber_threshold": QBER_THRESHOLD,
                 "ir_qber_per_intercept": IR_QBER_PER_INTERCEPT,
@@ -212,40 +252,64 @@ def write_outputs(per_fraction, rows, window):
                 "info_gain_definition": "0.5 * eavesdrop_fraction",
                 "p_attack_definition": "1 - P(clean) from RF classifier",
                 "detection_definition": "predicted label != clean",
+                "error_bar_definition": (
+                    "+/-1 SD of the per-batch mean across N_SEEDS replicate "
+                    "batches; BB84 uses secrets (OS entropy), so batches are "
+                    "independent draws (seed labels a batch, not a fixed RNG)."
+                ),
             },
             "arrays": arr,
             "exploit_window": window,
         }, f, indent=2)
     print(f"Wrote {json_path}")
 
-    # ── CSV ──
+    # ── Aggregated CSV ──
     csv_path = DATA_DIR / "partial_intercept_sweep.csv"
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow([
-            "eavesdrop_fraction", "qber_measured", "qber_theory",
-            "sift_ratio", "eve_info_gain", "ml_detection_rate",
-            "below_threshold",
-        ])
-        for r in rows:
-            w.writerow(r)
+        header = ["eavesdrop_fraction", "qber_measured_mean", "qber_measured_std",
+                  "qber_theory", "sift_ratio_mean", "sift_ratio_std",
+                  "eve_info_gain", "ml_detection_rate_mean",
+                  "ml_detection_rate_std", "below_threshold"]
+        w.writerow(header)
+        for fr in fracs:
+            d = per_fraction[fr]
+            w.writerow([
+                d["eavesdrop_fraction"], round(d["qber_measured_mean"], 6),
+                round(d["qber_measured_std"], 6), round(d["qber_theory"], 6),
+                round(d["sift_ratio_mean"], 6), round(d["sift_ratio_std"], 6),
+                round(d["eve_info_gain"], 6),
+                round(d["ml_detection_rate_mean"], 6),
+                round(d["ml_detection_rate_std"], 6), d["below_threshold"],
+            ])
     print(f"Wrote {csv_path}")
 
-    # ── Figure 1: QBER vs fraction ──
+    # ── Raw per-(seed, fraction) CSV ──
+    raw_path = DATA_DIR / "partial_intercept_sweep_per_seed.csv"
+    with open(raw_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["seed", "eavesdrop_fraction", "qber_measured",
+                    "sift_ratio", "ml_p_attack", "ml_detection_rate"])
+        for r in raw_rows:
+            w.writerow([r[0], r[1], round(r[2], 6), round(r[3], 6),
+                        round(r[4], 6), round(r[5], 6)])
+    print(f"Wrote {raw_path}")
+
+    # ── Figure 1: QBER vs fraction (mean +/- SD band) ──
     fig, ax = plt.subplots(figsize=(8, 5))
     fr = np.array(arr["eavesdrop_fraction"])
-    qm = np.array(arr["qber_measured"])
+    qm = np.array(arr["qber_measured_mean"])
     qs = np.array(arr["qber_measured_std"])
     qt = np.array(arr["qber_theory"])
 
-    ax.plot(fr, qm, "o-", color="#c0392b", label="Measured QBER (Qiskit)")
-    ax.fill_between(fr, qm - qs, qm + qs, color="#c0392b", alpha=0.15)
+    ax.plot(fr, qm, "o-", color="#c0392b",
+            label="Measured QBER (mean ±1 SD)")
+    ax.fill_between(fr, qm - qs, qm + qs, color="#c0392b", alpha=0.18)
     ax.plot(fr, qt, "s--", color="#2c3e50",
             label="Theory: 0.01 + 0.25·fraction")
     ax.axhline(QBER_THRESHOLD, ls="--", color="black",
                label=f"Abort threshold ({QBER_THRESHOLD:.0%})")
 
-    # Shade the sub-threshold exploit window (positive fractions, QBER < 0.11).
     if window is not None:
         edge = window["max_eavesdrop_fraction_below_threshold"]
         ax.axvspan(0.0, edge, color="#f1c40f", alpha=0.18,
@@ -253,7 +317,9 @@ def write_outputs(per_fraction, rows, window):
 
     ax.set_xlabel("Eve's intercept fraction")
     ax.set_ylabel("QBER")
-    ax.set_title("Sub-threshold exploit: QBER vs intercept fraction")
+    ax.set_title(
+        f"Sub-threshold exploit: QBER vs intercept fraction\n"
+        f"{N_SEEDS} replicate batches x {TRIALS_PER_SEED} trials (band = ±1 SD)")
     ax.legend(loc="upper left", fontsize=9)
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -262,10 +328,11 @@ def write_outputs(per_fraction, rows, window):
     plt.close(fig)
     print(f"Wrote {p1}")
 
-    # ── Figure 2: info gain + ML detection vs fraction (twin axes) ──
+    # ── Figure 2: info gain + ML detection vs fraction (twin axes, SD band) ──
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ig = np.array(arr["eve_info_gain"])
-    det = np.array(arr["ml_detection_rate"])
+    det = np.array(arr["ml_detection_rate_mean"])
+    det_s = np.array(arr["ml_detection_rate_std"])
 
     c1 = "#8e44ad"
     ax1.plot(fr, ig, "o-", color=c1, label="Eve info gain (0.5·fraction)")
@@ -276,7 +343,8 @@ def write_outputs(per_fraction, rows, window):
 
     ax2 = ax1.twinx()
     c2 = "#16a085"
-    ax2.plot(fr, det, "s--", color=c2, label="ML detection rate")
+    ax2.plot(fr, det, "s--", color=c2, label="ML detection rate (mean ±1 SD)")
+    ax2.fill_between(fr, det - det_s, det + det_s, color=c2, alpha=0.18)
     ax2.set_ylabel("ML detection rate", color=c2)
     ax2.tick_params(axis="y", labelcolor=c2)
     ax2.set_ylim(0, 1.05)
@@ -289,7 +357,9 @@ def write_outputs(per_fraction, rows, window):
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc="center right",
                fontsize=9)
-    ax1.set_title("Eve's information gain vs ML detection rate")
+    ax1.set_title(
+        f"Eve's information gain vs ML detection rate\n"
+        f"{N_SEEDS} replicate batches x {TRIALS_PER_SEED} trials (band = ±1 SD)")
     ax1.grid(alpha=0.3)
     fig.tight_layout()
     p2 = FIG_DIR / "subthreshold_info_gain.png"
@@ -299,12 +369,12 @@ def write_outputs(per_fraction, rows, window):
 
 
 def main():
-    per_fraction, rows = run_sweep()
+    per_fraction, raw_rows = run_sweep()
     window = find_window(per_fraction)
-    write_outputs(per_fraction, rows, window)
+    write_outputs(per_fraction, raw_rows, window)
 
     print("\n" + "=" * 60)
-    print("SUB-THRESHOLD EXPLOIT WINDOW")
+    print(f"SUB-THRESHOLD EXPLOIT WINDOW  ({N_SEEDS} seeds, mean +/- SD)")
     print("=" * 60)
     if window is None:
         print("No positive intercept fraction stayed below 11% QBER.")
@@ -312,12 +382,14 @@ def main():
         print(f"Max intercept fraction under 11% QBER : "
               f"{window['max_eavesdrop_fraction_below_threshold']:.1f}")
         print(f"  Measured QBER at that fraction       : "
-              f"{window['qber_at_window_edge']:.4f}")
+              f"{window['qber_at_window_edge']:.4f} +/- "
+              f"{window['qber_std_at_window_edge']:.4f}")
         print(f"  Eve info gain there                  : "
               f"{window['eve_info_gain_at_window_edge']:.3f} "
               f"(~{window['eve_info_gain_at_window_edge']*100:.0f}% of sifted key)")
         print(f"  ML detection rate at that fraction   : "
-              f"{window['ml_detection_rate_at_window_edge']:.2f}")
+              f"{window['ml_detection_rate_at_window_edge']:.2f} +/- "
+              f"{window['ml_detection_std_at_window_edge']:.2f}")
         print(f"  ML detection (mean over window)      : "
               f"{window['ml_detection_rate_in_window_mean']:.2f}")
         print(f"  Static 11% policy detection in window: "
