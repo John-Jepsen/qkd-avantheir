@@ -21,38 +21,32 @@ population against three defenses:
      each generation against the current attack population (the gym's own
      ``current_model``).
 
-Everything runs against the real implementation modules. This file reads them;
-it does not modify any source file.
+Multi-seed error bars
+---------------------
+The gym's evolution is stochastic and the underlying BB84 dataset is generated
+with ``secrets`` (OS entropy), so any single run is one draw from a distribution.
+To report robust results we run ``N_SEEDS`` independent replicates. Per replicate
+we:
+  * rebuild a fresh BB84 dataset (independent OS-entropy noise draw),
+  * override the gym's RNG with ``default_rng(seed)`` so its evolutionary
+    trajectory is reproducible for that replicate,
+  * seed the perturbation RNGs from ``seed``.
+We then aggregate mean ± standard deviation across replicates, per generation and
+for the final rates, and draw both figures with ±1 SD bands / error bars.
 
-Method
-------
-* Load the shipped RandomForest eavesdrop classifier
-  (``implementation/data/eavesdrop_model.pkl``) and reconstruct its train/test
-  split from a fresh dataset generation (deterministic seed) so we have
-  ``X_train, y_train, X_test, y_test`` for the gym.
-* Freeze a *baseline* copy of the classifier (never retrained).
-* Run ``AdversarialGym.evolve(...)`` for N generations. The gym clones the model
-  and hardens the clone each generation (the adaptive defender). Its
-  ``on_generation`` callback gives us the adaptive defender's per-generation
-  evasion rate directly.
-* Per generation we ALSO measure all three defenses on ONE common, honest
-  metric — the fraction of *genuine attack samples* each defense lets through:
-    - STATIC   : attacks whose induced QBER < 0.11 (the 11% rule never aborts
-                 them) — a pure, RNG-free property of the attack QBERs.
-    - baseline : attacks the frozen ML model predicts "clean" after an epsilon
-                 perturbation (gym helper ``generate_perturbations``).
-    - adaptive : same, but scored against the gym's *retrained* defender, which
-                 we capture each generation by wrapping the gym-namespace
-                 ``evaluate_evasion`` symbol (no source edits).
-* After evolution, we report final evasion rates for all three defenses and
-  whether adversarial retraining closed the gap relative to the baseline.
+Everything runs against the real implementation modules. This file reads them;
+it does not modify any source file (the gym RNG is overridden on the *instance*,
+not in the source).
 
 Outputs
 -------
-  thesis_data/adversarial_evolution_log.json  — metadata + per-gen records + phylogeny
-  thesis_data/adversarial_benchmark.csv        — per-gen benchmark table
-  thesis_figures/adversarial_fitness.png       — best & avg fitness over generations
-  thesis_figures/adversarial_evasion.png       — evasion vs static/baseline/adaptive
+  thesis_data/adversarial_evolution_log.json  — metadata + per-seed finals +
+                                                 aggregated per-gen (mean/std) +
+                                                 one representative phylogeny
+  thesis_data/adversarial_benchmark.csv        — aggregated per-gen table (mean/std)
+  thesis_data/adversarial_benchmark_per_seed.csv — raw per-(seed,gen) rows
+  thesis_figures/adversarial_fitness.png       — best & avg fitness ±1 SD band
+  thesis_figures/adversarial_evasion.png       — evasion vs 3 defenses ±1 SD band
 
 HARD RULE: this file only reads the existing implementation modules; it does not
 modify any source file.
@@ -93,8 +87,8 @@ MODEL_PATH = os.path.join(IMPL_DIR, "data", "eavesdrop_model.pkl")
 
 # ── Experiment configuration ─────────────────────────────────────────────────
 # Population 50, 20 generations: comfortably meets the >=20-generation requirement
-# with a population in the requested 40-60 band. The gym's internal RNG is seeded
-# to 42, so runs are reproducible.
+# with a population in the requested 40-60 band. Five independent replicates give
+# ±1 SD error bars on every reported quantity.
 POPULATION_SIZE = 50
 N_GENERATIONS = 20
 EPSILON = 0.15              # perturbation strength (matches adversarial_eval default sweep point)
@@ -102,7 +96,7 @@ HARDENING_MIX = 0.3        # fraction of adversarial samples in defender retrain
 DATASET_SAMPLES = 900      # BB84 sessions used to (re)build the train/test split
 N_BITS = 2048              # qubits per BB84 session (classical fast-backend)
 QBER_THRESHOLD = 0.11
-SEED = 42                  # matches the gym's internal default_rng seed
+SEEDS = [42, 43, 44, 45, 46]   # independent replicates -> mean +/- SD error bars
 
 
 # ── Defenses and the common evasion metric ───────────────────────────────────
@@ -119,11 +113,6 @@ SEED = 42                  # matches the gym's internal default_rng seed
 #                the thesis definition (a real attack whose QBER stays under the
 #                line). This is the *policy artifact*, independent of any model.
 #   - ML models: the classifier predicts "clean" for the attack sample.
-#
-# We evaluate the ML defenses on the attacker's *realized* attempts: the genuine
-# attack test samples after an epsilon perturbation (the same perturbation
-# machinery the gym uses for hardening), so the number reflects a policy-aware,
-# perturbing Eve rather than the raw untouched test set.
 
 ATTACK_LABELS = ("eavesdrop", "partial_intercept")
 _QBER_IDX = FEATURE_NAMES.index("qber")
@@ -139,9 +128,10 @@ def static_evasion_rate(X, y):
     """
     Fraction of genuine attacks the STATIC 11% threshold fails to abort.
 
-    Deterministic: it is a pure property of the attack samples' QBER, so no RNG
-    and no perturbation — a policy-aware Eve who merely keeps QBER < 0.11 evades
-    by construction. This is the fixed, exploitable gap the thesis targets.
+    Deterministic given the test set: a pure property of the attack samples'
+    QBER, so no RNG and no perturbation — a policy-aware Eve who merely keeps
+    QBER < 0.11 evades by construction. (It still varies across replicates
+    because each replicate draws a fresh BB84 dataset.)
     """
     Xa, _ = _attack_subset(X, y)
     if len(Xa) == 0:
@@ -183,13 +173,13 @@ def build_dataset():
     """
     Reconstruct a train/test split for the eavesdrop classifier.
 
-    We regenerate a labelled BB84 dataset (deterministic seed inside
-    EavesdropClassifier.generate_dataset) and reuse the shipped, fully-trained
-    model weights where available. This gives us the four arrays the gym needs
-    plus a model to clone.
+    Regenerates a labelled BB84 dataset and trains a model consistent with THIS
+    split. The BB84 simulator draws its channel noise from ``secrets`` (OS
+    entropy), so each call is an independent replicate — the source of the
+    across-seed variance the error bars capture.
     """
     orig = _install_fast_backend()
-    print(f"Generating BB84 dataset ({DATASET_SAMPLES} sessions, "
+    print(f"  Generating BB84 dataset ({DATASET_SAMPLES} sessions, "
           f"{N_BITS} qubits each, classical backend)...")
     clf = EavesdropClassifier()
     clf.generate_dataset(n_samples=DATASET_SAMPLES, n_bits=N_BITS)
@@ -198,13 +188,17 @@ def build_dataset():
     return clf
 
 
-def run():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    os.makedirs(FIG_DIR, exist_ok=True)
+# ── One replicate ─────────────────────────────────────────────────────────────
+def run_single_seed(seed):
+    """
+    Run the full build -> evolve -> benchmark pipeline for one replicate.
 
-    t0 = time.time()
+    Returns a dict with the per-generation records, the final evasion rates, the
+    defender accuracies, the gym's internal metric, and the phylogeny.
+    """
+    print(f"\n=== Replicate seed={seed} ===")
 
-    # 1. Dataset + split + a trained model to clone.
+    # 1. Fresh dataset + split + a trained model to clone.
     clf = build_dataset()
     X_train, y_train = clf.X_train, clf.y_train
     X_test, y_test = clf.X_test, clf.y_test
@@ -213,26 +207,19 @@ def run():
     baseline_model = clone(clf.model)
     baseline_model.fit(X_train, y_train)
     baseline_acc = accuracy_score(y_test, baseline_model.predict(X_test))
-    print(f"\nBaseline ML test accuracy: {baseline_acc:.1%}")
+    print(f"  Baseline ML test accuracy: {baseline_acc:.1%}")
 
-    # Independent RNGs (seeded) so the extra per-gen measurements are
-    # reproducible and don't perturb the gym's own RNG stream.
-    static_rng = np.random.default_rng(SEED)          # unused (static is RNG-free) but kept for parity
-    baseline_rng = np.random.default_rng(SEED + 1)
-    adaptive_rng = np.random.default_rng(SEED + 2)
+    # Independent, seed-derived RNGs for the extra per-gen measurements.
+    baseline_rng = np.random.default_rng(seed + 1)
+    adaptive_rng = np.random.default_rng(seed + 2)
 
-    # Static evasion is a pure property of the attack samples' QBER — constant
-    # across generations. We record it every generation so it plots as the flat,
-    # high, exploitable reference line the thesis is about.
+    # Static evasion is a pure property of this replicate's test set — constant
+    # across generations within the replicate (varies across replicates).
     static_ev_const = static_evasion_rate(X_test, y_test)
 
     per_gen = []
 
     # ── Intercept the gym's evolving adaptive defender ───────────────────────
-    # AdversarialGym.evolve() calls ``evaluate_evasion(current_model, ...)`` from
-    # the adversarial_gym module namespace once per generation. We wrap that
-    # symbol to capture the exact retrained model each generation so we can score
-    # it on OUR common attack-subset metric — without touching the source file.
     _adaptive_holder = {"model": None}
     _orig_eval = adversarial_gym.evaluate_evasion
 
@@ -243,9 +230,6 @@ def run():
     adversarial_gym.evaluate_evasion = _capturing_eval
 
     def on_generation(gr):
-        # All three defenses on the same metric: fraction of genuine attacks that
-        # slip through. Static = QBER<0.11; ML = predicted "clean" after epsilon
-        # perturbation of the attack samples.
         static_ev = static_ev_const
         baseline_ev = ml_evasion_rate(baseline_model, X_test, y_test,
                                       EPSILON, baseline_rng)
@@ -254,27 +238,19 @@ def run():
                                       EPSILON, adaptive_rng) \
             if adaptive_model is not None else float("nan")
 
-        rec = {
+        per_gen.append({
             "generation": gr.generation,
-            "best_fitness": round(float(gr.best_fitness), 6),
-            "avg_fitness": round(float(gr.avg_fitness), 6),
-            "evasion_vs_static": round(float(static_ev), 6),
-            "evasion_vs_baseline_ml": round(float(baseline_ev), 6),
-            "evasion_vs_adaptive_ml": round(float(adaptive_ev), 6),
-            "gym_reported_adaptive_evasion": round(float(gr.evasion_rate), 6),
-            "adaptive_defender_accuracy": round(float(gr.defender_accuracy), 6),
-            "population_size": gr.population_size,
-            "elapsed_s": round(float(gr.elapsed_s), 3),
-        }
-        per_gen.append(rec)
-        print(f"    [bench] gen {gr.generation:3d}  "
-              f"static={static_ev:.1%}  baseline={baseline_ev:.1%}  "
-              f"adaptive={adaptive_ev:.1%}")
+            "best_fitness": float(gr.best_fitness),
+            "avg_fitness": float(gr.avg_fitness),
+            "evasion_vs_static": float(static_ev),
+            "evasion_vs_baseline_ml": float(baseline_ev),
+            "evasion_vs_adaptive_ml": float(adaptive_ev),
+            "gym_reported_adaptive_evasion": float(gr.evasion_rate),
+            "adaptive_defender_accuracy": float(gr.defender_accuracy),
+        })
 
-    # 3. Run the co-evolutionary gym. It clones `clf.model` internally as the
-    #    adaptive defender and hardens it each generation.
-    print(f"\nRunning co-evolutionary gym: pop={POPULATION_SIZE}, "
-          f"gens={N_GENERATIONS}, epsilon={EPSILON}, seed={SEED}")
+    # 3. Run the gym. Override its RNG on the instance so this replicate's
+    #    evolutionary trajectory is reproducible for `seed` (no source edit).
     gym = AdversarialGym(
         population_size=POPULATION_SIZE,
         n_generations=N_GENERATIONS,
@@ -282,6 +258,9 @@ def run():
         hardening_mix=HARDENING_MIX,
         on_generation=on_generation,
     )
+    gym.rng = np.random.default_rng(seed)
+    print(f"  Evolving: pop={POPULATION_SIZE}, gens={N_GENERATIONS}, "
+          f"epsilon={EPSILON}, gym.rng seed={seed}")
     try:
         result = gym.evolve(X_train, y_train, X_test, y_test, clf.model)
     finally:
@@ -290,46 +269,131 @@ def run():
     # 4. Final defense benchmark on the common attack-subset metric.
     final_static = static_ev_const
     final_baseline = ml_evasion_rate(baseline_model, X_test, y_test, EPSILON,
-                                     np.random.default_rng(SEED + 98))
+                                     np.random.default_rng(seed + 98))
     final_adaptive = ml_evasion_rate(_adaptive_holder["model"], X_test, y_test,
-                                     EPSILON, np.random.default_rng(SEED + 99))
+                                     EPSILON, np.random.default_rng(seed + 99))
+    print(f"  Final evasion — static={final_static:.1%}  "
+          f"baseline={final_baseline:.1%}  adaptive={final_adaptive:.1%}")
+
+    return {
+        "seed": seed,
+        "per_gen": per_gen,
+        "final_static": final_static,
+        "final_baseline": final_baseline,
+        "final_adaptive": final_adaptive,
+        "baseline_acc": float(baseline_acc),
+        "adaptive_acc": float(result.final_defender_accuracy),
+        "gym_initial_evasion": float(result.initial_evasion_rate),
+        "gym_final_evasion": float(result.final_evasion_rate),
+        "phylogeny": result.phylogeny.to_dict(),
+    }
+
+
+# ── Aggregation across replicates ─────────────────────────────────────────────
+_AGG_METRICS = [
+    "best_fitness", "avg_fitness",
+    "evasion_vs_static", "evasion_vs_baseline_ml", "evasion_vs_adaptive_ml",
+]
+
+
+def aggregate(seed_results):
+    """
+    Build per-generation mean/std across replicates.
+
+    Returns a list (one entry per generation) of
+    {generation, <metric>_mean, <metric>_std, ...}.
+    """
+    n_gen = min(len(r["per_gen"]) for r in seed_results)
+    agg = []
+    for g in range(n_gen):
+        row = {"generation": g, "n_seeds": len(seed_results)}
+        for m in _AGG_METRICS:
+            vals = np.array([r["per_gen"][g][m] for r in seed_results], dtype=float)
+            row[f"{m}_mean"] = float(np.nanmean(vals))
+            row[f"{m}_std"] = float(np.nanstd(vals))
+        agg.append(row)
+    return agg
+
+
+def _final_stats(seed_results, key):
+    vals = np.array([r[key] for r in seed_results], dtype=float)
+    return float(np.nanmean(vals)), float(np.nanstd(vals))
+
+
+def run():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(FIG_DIR, exist_ok=True)
+
+    t0 = time.time()
+
+    seed_results = [run_single_seed(s) for s in SEEDS]
+    agg = aggregate(seed_results)
+
+    # Final rates: mean +/- SD across replicates.
+    fs_mean, fs_std = _final_stats(seed_results, "final_static")
+    fb_mean, fb_std = _final_stats(seed_results, "final_baseline")
+    fa_mean, fa_std = _final_stats(seed_results, "final_adaptive")
+    bacc_mean, bacc_std = _final_stats(seed_results, "baseline_acc")
+    aacc_mean, aacc_std = _final_stats(seed_results, "adaptive_acc")
 
     elapsed = time.time() - t0
 
-    # ── Write CSV ────────────────────────────────────────────────────────────
+    # ── Aggregated per-gen CSV ───────────────────────────────────────────────
     csv_path = os.path.join(DATA_DIR, "adversarial_benchmark.csv")
+    cols = ["generation", "n_seeds"]
+    for m in _AGG_METRICS:
+        cols += [f"{m}_mean", f"{m}_std"]
     with open(csv_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow([
-            "generation", "best_fitness", "avg_fitness",
-            "evasion_vs_static", "evasion_vs_baseline_ml", "evasion_vs_adaptive_ml",
-        ])
-        for r in per_gen:
-            w.writerow([
-                r["generation"], r["best_fitness"], r["avg_fitness"],
-                r["evasion_vs_static"], r["evasion_vs_baseline_ml"],
-                r["evasion_vs_adaptive_ml"],
-            ])
-    print(f"\nWrote {csv_path}  ({len(per_gen)} rows)")
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        for row in agg:
+            w.writerow({k: round(row[k], 6) if isinstance(row[k], float) else row[k]
+                        for k in cols})
+    print(f"\nWrote {csv_path}  ({len(agg)} generations x {len(SEEDS)} seeds)")
 
-    # ── Write JSON log (metadata + per-gen + phylogeny) ──────────────────────
+    # ── Raw per-(seed, gen) CSV ──────────────────────────────────────────────
+    raw_path = os.path.join(DATA_DIR, "adversarial_benchmark_per_seed.csv")
+    with open(raw_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["seed", "generation", "best_fitness", "avg_fitness",
+                    "evasion_vs_static", "evasion_vs_baseline_ml",
+                    "evasion_vs_adaptive_ml"])
+        for r in seed_results:
+            for rec in r["per_gen"]:
+                w.writerow([r["seed"], rec["generation"],
+                            round(rec["best_fitness"], 6),
+                            round(rec["avg_fitness"], 6),
+                            round(rec["evasion_vs_static"], 6),
+                            round(rec["evasion_vs_baseline_ml"], 6),
+                            round(rec["evasion_vs_adaptive_ml"], 6)])
+    print(f"Wrote {raw_path}")
+
+    # ── JSON log ─────────────────────────────────────────────────────────────
     log = {
         "experiment": "exp4_adversarial_benchmark",
         "metadata": {
             "generations": N_GENERATIONS,
             "population_size": POPULATION_SIZE,
-            "seed": SEED,
+            "seeds": SEEDS,
+            "n_seeds": len(SEEDS),
             "epsilon": EPSILON,
             "hardening_mix": HARDENING_MIX,
             "dataset_samples": DATASET_SAMPLES,
             "n_bits": N_BITS,
             "qber_threshold": QBER_THRESHOLD,
             "feature_names": FEATURE_NAMES,
-            "baseline_ml_accuracy": round(float(baseline_acc), 6),
-            "final_adaptive_defender_accuracy": round(
-                float(result.final_defender_accuracy), 6),
             "gym_backend": "classical",
+            "baseline_ml_accuracy_mean": round(bacc_mean, 6),
+            "baseline_ml_accuracy_std": round(bacc_std, 6),
+            "final_adaptive_defender_accuracy_mean": round(aacc_mean, 6),
+            "final_adaptive_defender_accuracy_std": round(aacc_std, 6),
             "total_elapsed_s": round(elapsed, 2),
+            "reproducibility_note": (
+                "gym RNG and perturbation RNGs are seeded per replicate; the "
+                "underlying BB84 dataset uses secrets (OS entropy), so each "
+                "replicate is an independent draw. Error bars are +/-1 SD across "
+                f"{len(SEEDS)} replicates."
+            ),
         },
         "evasion_metric": (
             "fraction of genuine attack samples (eavesdrop + partial_intercept) "
@@ -337,56 +401,75 @@ def run():
             "ML = predicted 'clean' after epsilon perturbation of attack samples"
         ),
         "final_evasion_rates": {
-            "static_threshold": round(float(final_static), 6),
-            "baseline_ml": round(float(final_baseline), 6),
-            "adaptive_ml": round(float(final_adaptive), 6),
-        },
-        "gym_internal_metric": {
-            "note": ("AdversarialGym's own evasion_rate over the full "
-                     "correctly-classified test set (not the attack-subset "
-                     "metric above); recorded for reference"),
-            "initial_evasion_rate": round(float(result.initial_evasion_rate), 6),
-            "final_evasion_rate": round(float(result.final_evasion_rate), 6),
+            "static_threshold": {"mean": round(fs_mean, 6), "std": round(fs_std, 6)},
+            "baseline_ml": {"mean": round(fb_mean, 6), "std": round(fb_std, 6)},
+            "adaptive_ml": {"mean": round(fa_mean, 6), "std": round(fa_std, 6)},
         },
         "verdicts": {
             "adaptive_ml_dominates_static": bool(
-                final_adaptive < final_static and final_baseline < final_static),
-            "retraining_beat_baseline": bool(
-                (final_baseline - final_adaptive) > 0.005),
+                fa_mean < fs_mean and fb_mean < fs_mean),
+            "retraining_beat_baseline": bool((fb_mean - fa_mean) > 0.005),
+            "static_gap_exceeds_noise": bool(
+                (fs_mean - max(fb_mean, fa_mean)) > (fs_std + max(fb_std, fa_std))),
         },
-        "per_generation": per_gen,
-        "phylogeny": result.phylogeny.to_dict(),
+        "per_seed_finals": [
+            {"seed": r["seed"], "static": round(r["final_static"], 6),
+             "baseline_ml": round(r["final_baseline"], 6),
+             "adaptive_ml": round(r["final_adaptive"], 6),
+             "gym_initial_evasion": round(r["gym_initial_evasion"], 6),
+             "gym_final_evasion": round(r["gym_final_evasion"], 6)}
+            for r in seed_results
+        ],
+        "per_generation_aggregated": [
+            {k: (round(v, 6) if isinstance(v, float) else v) for k, v in row.items()}
+            for row in agg
+        ],
+        # One representative phylogeny (first replicate) to keep the file small.
+        "representative_phylogeny": {
+            "seed": seed_results[0]["seed"],
+            "tree": seed_results[0]["phylogeny"],
+        },
     }
     json_path = os.path.join(DATA_DIR, "adversarial_evolution_log.json")
     with open(json_path, "w") as f:
         json.dump(log, f, indent=2)
     print(f"Wrote {json_path}  "
-          f"({log['phylogeny']['total_nodes']} phylogeny nodes)")
+          f"({log['representative_phylogeny']['tree']['total_nodes']} "
+          f"phylogeny nodes, replicate {seed_results[0]['seed']})")
 
-    # ── Figures ──────────────────────────────────────────────────────────────
-    make_fitness_figure(per_gen)
-    make_evasion_figure(per_gen, final_static, final_baseline, final_adaptive)
+    # ── Figures (with +/-1 SD bands) ─────────────────────────────────────────
+    make_fitness_figure(agg)
+    make_evasion_figure(agg, (fs_mean, fs_std), (fb_mean, fb_std),
+                        (fa_mean, fa_std))
 
-    print_conclusion(result, final_static, final_baseline, final_adaptive,
-                     baseline_acc)
+    print_conclusion(agg, (fs_mean, fs_std), (fb_mean, fb_std), (fa_mean, fa_std),
+                     (bacc_mean, bacc_std), (aacc_mean, aacc_std))
 
 
-def make_fitness_figure(per_gen):
-    gens = [r["generation"] for r in per_gen]
-    best = [r["best_fitness"] for r in per_gen]
-    avg = [r["avg_fitness"] for r in per_gen]
+def _band(ax, gens, mean, std, color, label, marker):
+    mean = np.asarray(mean)
+    std = np.asarray(std)
+    ax.plot(gens, mean, marker=marker, color=color, label=label)
+    ax.fill_between(gens, mean - std, mean + std, alpha=0.18, color=color)
+
+
+def make_fitness_figure(agg):
+    gens = [r["generation"] for r in agg]
+    best_m = [r["best_fitness_mean"] for r in agg]
+    best_s = [r["best_fitness_std"] for r in agg]
+    avg_m = [r["avg_fitness_mean"] for r in agg]
+    avg_s = [r["avg_fitness_std"] for r in agg]
 
     fig, ax = plt.subplots(figsize=(9, 5.5))
-    ax.plot(gens, best, marker="o", color="tab:red", label="best fitness")
-    ax.plot(gens, avg, marker="s", color="tab:blue", label="mean fitness")
-    ax.fill_between(gens, avg, best, alpha=0.12, color="tab:purple")
+    _band(ax, gens, best_m, best_s, "tab:red", "best fitness", "o")
+    _band(ax, gens, avg_m, avg_s, "tab:blue", "mean fitness", "s")
     ax.set_xlabel("Generation")
     ax.set_ylabel("Fitness (evasion score vs adaptive defender)")
     ax.set_title(
         "Experiment 4 — Attack fitness over co-evolution\n"
-        f"pop={POPULATION_SIZE}, gens={N_GENERATIONS}, "
-        f"epsilon={EPSILON}, seed={SEED}")
-    ax.set_ylim(-0.02, 1.02)
+        f"pop={POPULATION_SIZE}, gens={N_GENERATIONS}, epsilon={EPSILON}, "
+        f"{len(SEEDS)} seeds (band = +/-1 SD)")
+    ax.set_ylim(-0.02, 1.05)
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -396,39 +479,37 @@ def make_fitness_figure(per_gen):
     print(f"Wrote {out}")
 
 
-def make_evasion_figure(per_gen, final_static, final_baseline, final_adaptive):
-    gens = [r["generation"] for r in per_gen]
-    static = [r["evasion_vs_static"] for r in per_gen]
-    baseline = [r["evasion_vs_baseline_ml"] for r in per_gen]
-    adaptive = [r["evasion_vs_adaptive_ml"] for r in per_gen]
-
+def make_evasion_figure(agg, static, baseline, adaptive):
+    gens = [r["generation"] for r in agg]
     fig, ax = plt.subplots(figsize=(9.5, 6))
-    ax.plot(gens, static, marker="s", color="tab:red",
-            label="static 11% threshold (exploitable)")
-    ax.plot(gens, baseline, marker="^", color="tab:orange",
-            label="baseline ML (frozen)")
-    ax.plot(gens, adaptive, marker="o", color="tab:green",
-            label="adaptive ML (retrained each gen)")
+    _band(ax, gens, [r["evasion_vs_static_mean"] for r in agg],
+          [r["evasion_vs_static_std"] for r in agg],
+          "tab:red", "static 11% threshold (exploitable)", "s")
+    _band(ax, gens, [r["evasion_vs_baseline_ml_mean"] for r in agg],
+          [r["evasion_vs_baseline_ml_std"] for r in agg],
+          "tab:orange", "baseline ML (frozen)", "^")
+    _band(ax, gens, [r["evasion_vs_adaptive_ml_mean"] for r in agg],
+          [r["evasion_vs_adaptive_ml_std"] for r in agg],
+          "tab:green", "adaptive ML (retrained each gen)", "o")
 
     ax.set_xlabel("Generation")
     ax.set_ylabel("Evasion rate (fraction of attacks that slip through)")
     ax.set_ylim(-0.02, 1.02)
     ax.set_title(
         "Experiment 4 — Evasion vs three defenses under co-evolution\n"
-        "Static threshold stays high/exploitable; adaptive ML drives evasion down")
+        f"{len(SEEDS)} seeds, band = +/-1 SD. Static stays high/exploitable; "
+        "ML defenses hold low")
     ax.legend(loc="best")
     ax.grid(alpha=0.3)
 
-    # Annotate final points.
+    # Annotate final points with mean +/- SD.
     if gens:
         gx = gens[-1]
-        for y, c, txt in [
-            (final_static, "tab:red", f"{final_static:.0%}"),
-            (final_baseline, "tab:orange", f"{final_baseline:.0%}"),
-            (final_adaptive, "tab:green", f"{final_adaptive:.0%}"),
-        ]:
-            ax.annotate(txt, (gx, y), textcoords="offset points",
-                        xytext=(6, 0), fontsize=9, color=c, weight="bold")
+        for (m, s), c in [(static, "tab:red"), (baseline, "tab:orange"),
+                          (adaptive, "tab:green")]:
+            ax.annotate(f"{m:.0%}±{s:.0%}", (gx, m),
+                        textcoords="offset points", xytext=(6, 0),
+                        fontsize=9, color=c, weight="bold")
 
     fig.tight_layout()
     out = os.path.join(FIG_DIR, "adversarial_evasion.png")
@@ -437,41 +518,41 @@ def make_evasion_figure(per_gen, final_static, final_baseline, final_adaptive):
     print(f"Wrote {out}")
 
 
-def print_conclusion(result, final_static, final_baseline, final_adaptive,
-                     baseline_acc):
+def print_conclusion(agg, static, baseline, adaptive, bacc, aacc):
+    fs_m, fs_s = static
+    fb_m, fb_s = baseline
+    fa_m, fa_s = adaptive
     print("\n" + "=" * 70)
-    print("EXPERIMENT 4 CONCLUSION")
+    print(f"EXPERIMENT 4 CONCLUSION  ({len(SEEDS)} seeds, mean +/- SD)")
     print("=" * 70)
-    print(f"  Generations:                  {len(result.generations)}")
-    print(f"  Population size:              {POPULATION_SIZE}")
-    print(f"  Baseline ML accuracy:        {baseline_acc:.1%}")
-    print(f"  Adaptive ML final accuracy:  {result.final_defender_accuracy:.1%}")
+    print(f"  Generations:                 {len(agg)}")
+    print(f"  Population size:             {POPULATION_SIZE}")
+    print(f"  Baseline ML accuracy:        {bacc[0]:.1%} +/- {bacc[1]:.1%}")
+    print(f"  Adaptive ML final accuracy:  {aacc[0]:.1%} +/- {aacc[1]:.1%}")
     print()
     print("  FINAL EVASION RATES (higher = defense more exploitable):")
-    print(f"    static 11% threshold:      {final_static:.1%}")
-    print(f"    baseline ML (frozen):      {final_baseline:.1%}")
-    print(f"    adaptive ML (retrained):   {final_adaptive:.1%}")
+    print(f"    static 11% threshold:      {fs_m:.1%} +/- {fs_s:.1%}")
+    print(f"    baseline ML (frozen):      {fb_m:.1%} +/- {fb_s:.1%}")
+    print(f"    adaptive ML (retrained):   {fa_m:.1%} +/- {fa_s:.1%}")
     print()
-    gap_closed = final_baseline - final_adaptive
-    print(f"  Gym's internal evasion metric (adaptive defender, full test set): "
-          f"{result.initial_evasion_rate:.1%} -> {result.final_evasion_rate:.1%}")
-    print()
+    primary = ("SUPPORTED" if fa_m < fs_m and fb_m < fs_m else "NOT SUPPORTED")
+    sep = fs_m - max(fb_m, fa_m)
+    noise = fs_s + max(fb_s, fa_s)
     print("  PRIMARY THESIS — an ML defense dominates the static 11% threshold:")
-    print(f"    static evasion {final_static:.1%} vs ML evasion "
-          f"~{min(final_baseline, final_adaptive):.1%}  "
-          f"({final_static - final_adaptive:+.1%} for adaptive)")
-    primary = ("SUPPORTED" if final_adaptive < final_static
-               and final_baseline < final_static else "NOT SUPPORTED")
-    print(f"    verdict: {primary}")
+    print(f"    static {fs_m:.1%} vs ML ~{min(fb_m, fa_m):.1%}; "
+          f"separation {sep:.1%} vs combined SD {noise:.1%}")
+    print(f"    verdict: {primary}"
+          + ("  (gap exceeds noise)" if sep > noise else "  (within noise!)"))
     print()
+    gap_closed = fb_m - fa_m
     print("  SECONDARY — did adversarial retraining beat the frozen baseline?")
-    print(f"    baseline {final_baseline:.1%} vs adaptive {final_adaptive:.1%} "
-          f"(gap closed {gap_closed:+.1%})")
-    if gap_closed > 0.005:
-        print("    verdict: YES — retraining lowered evasion further")
-    elif abs(gap_closed) <= 0.005:
-        print("    verdict: NEUTRAL — baseline ML already near its floor for "
-              "this perturbing attacker; retraining neither helped nor hurt")
+    print(f"    baseline {fb_m:.1%} vs adaptive {fa_m:.1%} "
+          f"(gap closed {gap_closed:+.1%}, SDs {fb_s:.1%}/{fa_s:.1%})")
+    if gap_closed > 0.005 and gap_closed > (fb_s + fa_s):
+        print("    verdict: YES — retraining lowered evasion beyond noise")
+    elif abs(gap_closed) <= (fb_s + fa_s):
+        print("    verdict: NEUTRAL — difference within replicate noise; baseline "
+              "ML already near its floor for this perturbing attacker")
     else:
         print("    verdict: NO — retraining did not improve on the frozen baseline")
 
