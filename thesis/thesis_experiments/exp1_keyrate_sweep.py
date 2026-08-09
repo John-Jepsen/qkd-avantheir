@@ -43,7 +43,7 @@ Outputs
   thesis_data/keyrate_boundaries.json  (boundaries + full metadata)
   thesis_figures/keyrate_boundary.png
 
-Run:  implementation/.venv/bin/python thesis_experiments/exp1_keyrate_sweep.py
+Run:  implementation/.venv/bin/python thesis/thesis_experiments/exp1_keyrate_sweep.py
 """
 
 from __future__ import annotations
@@ -57,7 +57,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+THESIS_DIR = Path(__file__).resolve().parents[1]  # thesis/
+REPO = THESIS_DIR.parent  # repo root (holds qkdsec/ submodule, implementation/)
 # qkdsec is a git submodule with a src layout and is not pip-installed in
 # this venv; from the repo root the bare submodule directory would shadow
 # it as an empty namespace package, so put qkdsec/src first on sys.path.
@@ -72,8 +73,8 @@ import numpy as np  # noqa: E402
 from qkdsec.proofs import BB84, DepolarizingChannel, key_rate  # noqa: E402
 from qkdsec.proofs.finite_size import tomamichel_correction  # noqa: E402
 
-DATA_DIR = REPO / "thesis_data"
-FIG_DIR = REPO / "thesis_figures"
+DATA_DIR = THESIS_DIR / "thesis_data"
+FIG_DIR = THESIS_DIR / "thesis_figures"
 
 EPS_SECURITY = 1e-10  # qkdsec key_rate() default
 SOLVER = "CLARABEL"  # qkdsec key_rate() default

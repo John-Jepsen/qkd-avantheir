@@ -64,7 +64,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # ── Wire up imports against the existing implementation package ──────────────
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+THESIS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # thesis/
+REPO_ROOT = os.path.dirname(THESIS_DIR)  # repo root (holds implementation/)
 IMPL_DIR = os.path.join(REPO_ROOT, "implementation")
 sys.path.insert(0, IMPL_DIR)
 
@@ -81,8 +82,8 @@ from adversarial_eval import generate_perturbations, evaluate_evasion  # noqa: E
 import adversarial_gym                                      # noqa: E402
 from adversarial_gym import AdversarialGym                  # noqa: E402
 
-DATA_DIR = os.path.join(REPO_ROOT, "thesis_data")
-FIG_DIR = os.path.join(REPO_ROOT, "thesis_figures")
+DATA_DIR = os.path.join(THESIS_DIR, "thesis_data")
+FIG_DIR = os.path.join(THESIS_DIR, "thesis_figures")
 MODEL_PATH = os.path.join(IMPL_DIR, "data", "eavesdrop_model.pkl")
 
 # ── Experiment configuration ─────────────────────────────────────────────────

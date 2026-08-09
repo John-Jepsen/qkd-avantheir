@@ -64,7 +64,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # ── Repo paths ────────────────────────────────────────────────────────────────
-REPO_ROOT = Path(__file__).resolve().parent.parent
+THESIS_DIR = Path(__file__).resolve().parent.parent  # thesis/
+REPO_ROOT = THESIS_DIR.parent  # repo root (holds implementation/)
 IMPL_DIR = REPO_ROOT / "implementation"
 sys.path.insert(0, str(IMPL_DIR))
 
@@ -72,8 +73,8 @@ from bb84_simulator import BB84Protocol            # noqa: E402
 from features import extract_features              # noqa: E402
 from ml_eavesdrop_classifier import EavesdropClassifier  # noqa: E402
 
-DATA_DIR = REPO_ROOT / "thesis_data"
-FIG_DIR = REPO_ROOT / "thesis_figures"
+DATA_DIR = THESIS_DIR / "thesis_data"
+FIG_DIR = THESIS_DIR / "thesis_figures"
 MODEL_PATH = IMPL_DIR / "data" / "eavesdrop_model.pkl"
 
 # ── Experiment configuration ──────────────────────────────────────────────────

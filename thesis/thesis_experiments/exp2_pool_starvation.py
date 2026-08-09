@@ -62,10 +62,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+THESIS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # thesis/
+REPO_ROOT = os.path.dirname(THESIS_DIR)  # repo root (holds implementation/)
 IMPL_DIR = os.path.join(REPO_ROOT, "implementation")
-DATA_DIR = os.path.join(REPO_ROOT, "thesis_data")
-FIG_DIR = os.path.join(REPO_ROOT, "thesis_figures")
+DATA_DIR = os.path.join(THESIS_DIR, "thesis_data")
+FIG_DIR = os.path.join(THESIS_DIR, "thesis_figures")
 sys.path.insert(0, IMPL_DIR)
 
 import bb84_simulator  # noqa: E402
