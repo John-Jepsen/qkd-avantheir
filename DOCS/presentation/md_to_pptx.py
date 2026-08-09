@@ -109,12 +109,20 @@ def build(md_path, out_path):
 
     for idx, blocks in enumerate(slides):
         slide = prs.slides.add_slide(blank)
-        y = MARGIN
+        # Title slide starts lower and flows its blocks as a centred stack;
+        # content slides start at the top margin.
+        y = Inches(2.0) if idx == 0 else MARGIN
         title_done = False
         for kind, data in blocks:
             if kind in ("h1", "h2") and not title_done:
                 # first heading on the slide is the title
-                h = Inches(1.5 if idx == 0 else 0.9)
+                if idx == 0:
+                    # height grows with wrapped lines so the subtitle below
+                    # never overlaps a multi-line title
+                    lines_est = max(1, len(data) // 34 + 1)
+                    h = Inches(0.62 * lines_est + 0.15)
+                else:
+                    h = Inches(0.9)
                 box = slide.shapes.add_textbox(MARGIN, y, CONTENT_W, h)
                 tf = box.text_frame
                 tf.word_wrap = True
@@ -122,14 +130,18 @@ def build(md_path, out_path):
                 add_runs(p, data, 40 if idx == 0 else 30, base_bold=True)
                 if idx == 0:
                     p.alignment = PP_ALIGN.CENTER
-                    box.top = Inches(2.2)
-                y += h + Inches(0.1)
+                y += h + Inches(0.25 if idx == 0 else 0.1)
                 title_done = True
-            elif kind in ("h1", "h2"):  # second heading mid-slide
+            elif kind in ("h1", "h2"):  # subsequent heading — subtitle / label
                 box = slide.shapes.add_textbox(MARGIN, y, CONTENT_W, Inches(0.6))
+                box.text_frame.word_wrap = True
                 p = box.text_frame.paragraphs[0]
-                add_runs(p, data, 24, base_bold=True, color=ACCENT)
-                y += Inches(0.7)
+                add_runs(p, data, 22 if idx == 0 else 24, base_bold=True, color=ACCENT)
+                if idx == 0:
+                    p.alignment = PP_ALIGN.CENTER
+                    y += Inches(0.6)
+                else:
+                    y += Inches(0.7)
             elif kind == "bullet":
                 level, numbered, text = data
                 box = slide.shapes.add_textbox(
@@ -151,7 +163,6 @@ def build(md_path, out_path):
                 add_runs(p, data, size)
                 if idx == 0:
                     p.alignment = PP_ALIGN.CENTER
-                    box.top = Inches(4.2)
                 h = Inches(0.4 * max(1, (len(data) // 95) + 1))
                 box.height = h
                 y += h + Emu(38100)
